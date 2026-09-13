@@ -5,8 +5,6 @@ const multer = require('multer');
 const { getGridFS } = require('../config/gridfs');
 const Document = require('../models/Document');
 const { ObjectId } = require('mongodb');
-const jwt = require('jsonwebtoken');
-const mongoose = require('mongoose');
 
 // ✅ Multer memory storage (Buffer mein rakhega, disk par nahi)
 const storage = multer.memoryStorage();
@@ -17,7 +15,12 @@ const upload = multer({
     if (file.fieldname !== 'documents' && file.fieldname !== 'file') {
       return cb(new Error('Unexpected field: ' + file.fieldname));
     }
-    const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+    const allowedTypes = [
+      'image/jpeg', 'image/png', 'application/pdf', 
+      'application/msword', 
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+      'text/plain'
+    ];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -74,10 +77,8 @@ router.post('/upload', auth, upload.array('documents', 50), async (req, res) => 
         uploadStream.on('error', (err) => reject(err));
       });
 
-      // ✅ Save metadata to MongoDB
-      const host = req.get('host');
-      const protocol = req.protocol === 'https' ? 'https' : 'http';
-      const url = `${protocol}://${host}/api/documents/${fileId}`;
+      // ✅ FIX: Relative URL — host-independent
+      const url = `/api/documents/file/${fileId}`;
 
       const doc = new Document({
         clientId: clientId,
@@ -139,7 +140,10 @@ router.put('/:id/rename', auth, async (req, res) => {
 // ✅ Get all documents for a client
 router.get('/client/:clientId', auth, async (req, res) => {
   try {
-    const documents = await Document.find({ clientId: req.params.clientId, isDeleted: false }).sort({ createdAt: -1 });
+    const documents = await Document.find({ 
+      clientId: req.params.clientId, 
+      isDeleted: false 
+    }).sort({ createdAt: -1 });
     res.json(documents);
   } catch (error) {
     console.error('Error fetching documents:', error);
@@ -150,7 +154,11 @@ router.get('/client/:clientId', auth, async (req, res) => {
 // ✅ Delete document (soft delete)
 router.delete('/:id', auth, async (req, res) => {
   try {
-    const doc = await Document.findOneAndUpdate({ _id: req.params.id, isDeleted: false }, { isDeleted: true }, { new: true });
+    const doc = await Document.findOneAndUpdate(
+      { _id: req.params.id, isDeleted: false }, 
+      { isDeleted: true }, 
+      { new: true }
+    );
     if (!doc) return res.status(404).json({ message: 'Document not found' });
     res.json({ message: 'Document deleted successfully' });
   } catch (error) {
@@ -159,7 +167,43 @@ router.delete('/:id', auth, async (req, res) => {
   }
 });
 
-// ✅ Get document by GridFS file ID (view/download) — FIXED with auth middleware
+// ✅ NEW: Get document by GridFS file ID (view/download) — specific route
+router.get('/file/:fileId', auth, async (req, res) => {
+  try {
+    const fileId = new ObjectId(req.params.fileId);
+    const doc = await Document.findOne({ fileId, isDeleted: false });
+    if (!doc) return res.status(404).json({ message: 'Document not found' });
+
+    const bucket = getGridFS();
+    if (!bucket) return res.status(500).json({ message: 'GridFS not available' });
+
+    const downloadStream = bucket.openDownloadStream(fileId);
+    
+    downloadStream.on('file', (file) => {
+      res.setHeader('Content-Type', file.contentType || doc.mimeType);
+      res.setHeader('Content-Length', file.length);
+      res.setHeader('Content-Disposition', `inline; filename="${doc.filename}"`);
+    });
+
+    downloadStream.on('error', (error) => {
+      console.error('Download error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: 'Error downloading file' });
+      }
+    });
+
+    downloadStream.pipe(res);
+
+  } catch (error) {
+    console.error('Document fetch error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ message: error.message });
+    }
+  }
+});
+
+// ✅ BACKWARD COMPAT: Old route (/:id) — bhi rakh do temporarily
+// Purane documents jo `/api/documents/:fileId` use kar rahe hain unke liye
 router.get('/:id', auth, async (req, res) => {
   try {
     const fileId = new ObjectId(req.params.id);
@@ -170,18 +214,27 @@ router.get('/:id', auth, async (req, res) => {
     if (!bucket) return res.status(500).json({ message: 'GridFS not available' });
 
     const downloadStream = bucket.openDownloadStream(fileId);
-    res.setHeader('Content-Type', doc.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${doc.filename}"`);
-    downloadStream.pipe(res);
+    
+    downloadStream.on('file', (file) => {
+      res.setHeader('Content-Type', file.contentType || doc.mimeType);
+      res.setHeader('Content-Length', file.length);
+      res.setHeader('Content-Disposition', `inline; filename="${doc.filename}"`);
+    });
 
     downloadStream.on('error', (error) => {
       console.error('Download error:', error);
-      res.status(500).json({ message: 'Error downloading file' });
+      if (!res.headersSent) {
+        res.status(500).json({ message: 'Error downloading file' });
+      }
     });
+
+    downloadStream.pipe(res);
 
   } catch (error) {
     console.error('Document fetch error:', error);
-    res.status(500).json({ message: error.message });
+    if (!res.headersSent) {
+      res.status(500).json({ message: error.message });
+    }
   }
 });
 
