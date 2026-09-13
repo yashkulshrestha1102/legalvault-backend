@@ -5,6 +5,7 @@ const multer = require('multer');
 const { getGridFS } = require('../config/gridfs');
 const Document = require('../models/Document');
 const { ObjectId } = require('mongodb');
+const mongoose = require('mongoose'); 
 
 // ✅ Multer memory storage (Buffer mein rakhega, disk par nahi)
 const storage = multer.memoryStorage();
