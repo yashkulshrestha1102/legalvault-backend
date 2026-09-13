@@ -1,26 +1,42 @@
 const CustomFile = require('../models/CustomFile');
 const CustomFolder = require('../models/CustomFolder');
 const Client = require('../models/Client');
+const User = require('../models/User');
 const { getGridFS } = require('../config/gridfs');
 const { getFileType } = require('../utils/fileTypeDetector');
 const { ObjectId } = require('mongodb');
 const mongoose = require('mongoose');
 const archiver = require('archiver');
 
-
 const createArchive = archiver.create || archiver;
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
-// ✅ Helper: access check
+// ✅ Helper: access check — merges client-level + user-level permissions
 const checkClientAccess = async (user, clientId, requiredFolder = 'client-folder') => {
+  // Admin bypass
   if (user.role === 'admin') return true;
+
   const client = await Client.findById(clientId).select('userPermissions');
   if (!client) return false;
-  const perm = client.userPermissions?.find(
+
+  // ✅ Client-level permissions
+  const clientPerm = client.userPermissions?.find(
     p => String(p.userId?._id || p.userId) === String(user.id)
   );
-  if (!perm) return false;
-  return perm.folderPermissions?.includes(requiredFolder);
+  const clientLevelPerms = clientPerm?.folderPermissions || [];
+
+  // ✅ User-level permissions
+  const userDoc = await User.findById(user.id).select('folderPermissions');
+  const userLevelPerms = userDoc?.folderPermissions || [];
+
+  // ✅ Merge both
+  const mergedPermissions = [...new Set([...clientLevelPerms, ...userLevelPerms])];
+
+  console.log('🔍 checkClientAccess — client-level:', clientLevelPerms);
+  console.log('🔍 checkClientAccess — user-level:', userLevelPerms);
+  console.log('🔍 checkClientAccess — merged:', mergedPermissions);
+
+  return mergedPermissions.includes(requiredFolder);
 };
 
 // ✅ UPLOAD — Bulk upload files into a folder
@@ -62,7 +78,6 @@ exports.uploadFiles = async (req, res) => {
     const uploadedFiles = [];
 
     for (const file of req.files) {
-      // Upload to GridFS
       const uploadStream = bucket.openUploadStream(file.originalname, {
         contentType: file.mimetype,
         metadata: {
@@ -142,7 +157,6 @@ exports.getFilesByFolder = async (req, res) => {
 
     const files = await CustomFile.find(filter).sort({ createdAt: -1 });
 
-    // Add virtual URL
     const filesWithUrl = files.map(f => ({
       ...f.toObject(),
       url: `/api/custom-files/file/${f.fileId}`
@@ -223,7 +237,6 @@ exports.streamFile = async (req, res) => {
     const bucket = getGridFS();
     if (!bucket) return res.status(500).json({ message: 'GridFS not available' });
 
-    // ?download=1 forces download; otherwise inline
     const isDownload = req.query.download === '1';
     const disposition = isDownload ? 'attachment' : 'inline';
 
@@ -352,7 +365,6 @@ exports.downloadFolderZip = async (req, res) => {
       isDeleted: false
     });
 
-    // Sanitize filename for header
     const safeName = rootFolder.name.replace(/[^\w\-\s]/g, '').trim() || 'folder';
     const zipName = `${safeName}.zip`;
 
@@ -362,12 +374,13 @@ exports.downloadFolderZip = async (req, res) => {
       `attachment; filename="${encodeURIComponent(zipName)}"`
     );
 
-const archive = createArchive('zip', { zlib: { level: 6 } });
+    const archive = createArchive('zip', { zlib: { level: 6 } });
 
     archive.on('warning', (err) => {
       if (err.code === 'ENOENT') console.warn('Zip warning:', err);
-      else throw err;
+      else console.error('Zip warning:', err);
     });
+
     archive.on('error', (err) => {
       console.error('Archive error:', err);
       if (!res.headersSent) res.status(500).end();
@@ -375,11 +388,9 @@ const archive = createArchive('zip', { zlib: { level: 6 } });
 
     archive.pipe(res);
 
-    // Build folder map: _id -> relative path
     const pathMap = new Map();
-    pathMap.set(rootFolder._id.toString(), ''); // root inside zip is empty prefix
+    pathMap.set(rootFolder._id.toString(), '');
 
-    // Sort folders so parents come first
     allFolders.sort((a, b) => (a.path?.length || 0) - (b.path?.length || 0));
 
     for (const folder of allFolders) {
@@ -391,7 +402,6 @@ const archive = createArchive('zip', { zlib: { level: 6 } });
       pathMap.set(folder._id.toString(), currentPath);
     }
 
-    // Add files to archive
     for (const file of files) {
       const folderPath = pathMap.get(file.folderId.toString()) || '';
       const archivePath = folderPath
@@ -406,7 +416,6 @@ const archive = createArchive('zip', { zlib: { level: 6 } });
       }
     }
 
-    // If no files, add a placeholder README
     if (files.length === 0) {
       archive.append('This folder is empty.', { name: '_EMPTY.txt' });
     }

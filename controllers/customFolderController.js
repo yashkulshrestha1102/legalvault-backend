@@ -1,24 +1,39 @@
 const CustomFolder = require('../models/CustomFolder');
 const CustomFile = require('../models/CustomFile');
 const Client = require('../models/Client');
+const User = require('../models/User');
 const mongoose = require('mongoose');
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 const sanitizeString = (str) => str?.trim() || '';
 
 // ✅ Helper: Check user has access to client's custom-folder
+// Merges client-level + user-level permissions (same as frontend)
 const checkClientAccess = async (user, clientId, requiredFolder = 'client-folder') => {
+  // Admin bypass
   if (user.role === 'admin') return true;
 
   const client = await Client.findById(clientId).select('userPermissions');
   if (!client) return false;
 
-  const perm = client.userPermissions?.find(
+  // ✅ Client-level permissions (per-client override)
+  const clientPerm = client.userPermissions?.find(
     p => String(p.userId?._id || p.userId) === String(user.id)
   );
+  const clientLevelPerms = clientPerm?.folderPermissions || [];
 
-  if (!perm) return false;
-  return perm.folderPermissions?.includes(requiredFolder);
+  // ✅ User-level permissions (global fallback)
+  const userDoc = await User.findById(user.id).select('folderPermissions');
+  const userLevelPerms = userDoc?.folderPermissions || [];
+
+  // ✅ Merge both (unique)
+  const mergedPermissions = [...new Set([...clientLevelPerms, ...userLevelPerms])];
+
+  console.log('🔍 checkClientAccess — client-level:', clientLevelPerms);
+  console.log('🔍 checkClientAccess — user-level:', userLevelPerms);
+  console.log('🔍 checkClientAccess — merged:', mergedPermissions);
+
+  return mergedPermissions.includes(requiredFolder);
 };
 
 // ✅ CREATE — Auto-create root folder (called from clientController on client create)
