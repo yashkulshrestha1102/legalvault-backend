@@ -14,7 +14,7 @@ console.log('✅ userRoutes.js loaded - Production Fix');
 const ALLOWED_FOLDERS = [
   'registrations', 'contracts', 'policies', 'corporate-secretariat',
   'hr', 'gst', 'income-tax', 'financials',
-  'documents'
+  'documents','client-folder' 
 ];
 
 // ✅ Validation Rules

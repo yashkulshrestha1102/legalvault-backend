@@ -6,7 +6,9 @@ const ALL_FOLDERS = [
   { id: 'hr', label: 'HR', group: 'Main' },
   { id: 'gst', label: 'GST', group: 'Main' },
   { id: 'income-tax', label: 'Income Tax', group: 'Main' },
-  { id: 'financials', label: 'Financials', group: 'Main' }
+  { id: 'financials', label: 'Financials', group: 'Main' },
+  { id: 'client-folder', label: 'Client Folder', group: 'Custom' }      
+
 ];
 
 // Folder IDs array (for quick checks)

@@ -1,4 +1,5 @@
 const Client = require('../models/Client');
+const CustomFolder = require('../models/CustomFolder');
 const mongoose = require('mongoose');
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
@@ -108,7 +109,7 @@ exports.getClientById = async (req, res) => {
   }
 };
 
-// ✅ Create client (Admin only)
+// ✅ Create client (Admin only) - WITH AUTO ROOT FOLDER CREATION
 exports.createClient = async (req, res) => {
   try {
     const { name, company, email, phone, status, contactPerson, onboardingDate, userPermissions } = req.body;
@@ -140,7 +141,17 @@ exports.createClient = async (req, res) => {
 
     const client = new Client(sanitized);
     await client.save();
-    
+
+    // ✅ NEW: Auto-create root custom folder for this client
+    try {
+      const { createRootFolder } = require('./customFolderController');
+      await createRootFolder(client._id, client.name, req.user.id);
+      console.log('✅ Root custom folder auto-created for client:', client.name);
+    } catch (folderErr) {
+      console.error('⚠️ Root folder creation failed (non-critical):', folderErr.message);
+      // Client creation ko fail mat karo — folder baad me ban sakta hai
+    }
+
     const populatedClient = await Client.findById(client._id)
       .populate('userPermissions.userId', 'name email role');
     
@@ -151,7 +162,7 @@ exports.createClient = async (req, res) => {
   }
 };
 
-// ✅ Update client (Admin only)
+// ✅ Update client (Admin only) - WITH ROOT FOLDER NAME SYNC
 exports.updateClient = async (req, res) => {
   try {
     const { id } = req.params;
@@ -199,6 +210,22 @@ exports.updateClient = async (req, res) => {
     if (!client) {
       return res.status(404).json({ message: 'Client not found' });
     }
+
+    // ✅ NEW: Sync root custom folder name with client name
+    if (updateData.name) {
+      try {
+        const result = await CustomFolder.updateOne(
+          { clientId: client._id, isRoot: true, isDeleted: false },
+          { $set: { name: updateData.name } }
+        );
+        if (result.modifiedCount > 0) {
+          console.log('✅ Root folder name synced to:', updateData.name);
+        }
+      } catch (folderErr) {
+        console.error('⚠️ Root folder rename failed (non-critical):', folderErr.message);
+      }
+    }
+
     res.json(client);
   } catch (error) {
     console.error('❌ Update client error:', error);
@@ -206,7 +233,7 @@ exports.updateClient = async (req, res) => {
   }
 };
 
-// ✅ Delete client (Admin only)
+// ✅ Delete client (Admin only) - WITH SOFT DELETE OF CUSTOM FOLDERS
 exports.deleteClient = async (req, res) => {
   try {
     const { id } = req.params;
@@ -228,6 +255,27 @@ exports.deleteClient = async (req, res) => {
     if (!client) {
       return res.status(404).json({ message: 'Client not found' });
     }
+
+    // ✅ NEW: Soft delete all custom folders + files of this client
+    try {
+      const CustomFile = require('../models/CustomFile');
+      const now = new Date();
+
+      const folderResult = await CustomFolder.updateMany(
+        { clientId: client._id, isDeleted: false },
+        { isDeleted: true, deletedAt: now, deletedBy: req.user.id }
+      );
+
+      const fileResult = await CustomFile.updateMany(
+        { clientId: client._id, isDeleted: false },
+        { isDeleted: true, deletedAt: now, deletedBy: req.user.id }
+      );
+
+      console.log(`✅ Client delete: ${folderResult.modifiedCount} folders + ${fileResult.modifiedCount} files soft-deleted`);
+    } catch (folderErr) {
+      console.error('⚠️ Custom folder cleanup failed (non-critical):', folderErr.message);
+    }
+
     res.json({ message: 'Client deleted successfully' });
   } catch (error) {
     console.error('❌ Delete client error:', error);
