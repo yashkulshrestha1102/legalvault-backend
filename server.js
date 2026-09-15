@@ -12,7 +12,6 @@ const { initGridFS } = require('./config/gridfs');
 const auditLog = require('./middleware/audit');
 const cookieParser = require('cookie-parser');
 
-
 const app = express();
 
 // ✅ Environment Variable Validation
@@ -25,10 +24,14 @@ requiredEnv.forEach(key => {
 });
 console.log('✅ All environment variables are set');
 
+// ═══════════════════════════════════════════
+// 1️⃣ CORS — Sabse pehla layer
+// ═══════════════════════════════════════════
 app.use((req, res, next) => {
   const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:5174',
+    'http://localhost:3000',
     'https://legalvault-frontend-two.vercel.app',
     'https://legalvault-ochre.vercel.app',
     'https://legalvault.businezexcellence.com',
@@ -38,18 +41,12 @@ app.use((req, res, next) => {
   
   const origin = req.headers.origin;
 
-
-
-  
-  // ✅ Only set if origin is in whitelist
   if (origin && allowedOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Vary', 'Origin'); // ✅ Cache busting for CDN
+    res.setHeader('Vary', 'Origin');
   } else if (!origin) {
-    // ✅ No origin (like Postman, mobile apps) - allow
     res.setHeader('Access-Control-Allow-Origin', allowedOrigins[0]);
   }
-  // ❌ Otherwise: NO CORS header → browser blocks
   
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.setHeader(
@@ -57,31 +54,33 @@ app.use((req, res, next) => {
     'Origin, X-Requested-With, Content-Type, Accept, Authorization'
   );
   res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Max-Age', '86400'); // ✅ Cache preflight 24h
+  res.setHeader('Access-Control-Max-Age', '86400');
   
   if (req.method === 'OPTIONS') {
-    return res.sendStatus(204); // ✅ 204 No Content better than 200
+    return res.sendStatus(204);
   }
   
   next();
 });
 
-// ✅ Force security headers
+// ═══════════════════════════════════════════
+// 2️⃣ Security Headers
+// ═══════════════════════════════════════════
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
   res.removeHeader('X-Powered-By');
   next();
 });
 
-// ✅ Security - Helmet
+// ✅ Helmet — after custom headers
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: false,
   crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: false,   // ✅ ADDED: Disable CSP (was causing issues sometimes)
   dnsPrefetchControl: true,
   frameguard: false,
   hidePoweredBy: true,
@@ -98,40 +97,66 @@ app.set('trust proxy', 1);
 // ✅ Morgan
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-// ✅ Compression
-app.use(compression({
-  level: 6,
-  threshold: 1024,
-  filter: (req, res) => {
-    if (req.headers['x-no-compression']) {
-      return false;
-    }
-    return compression.filter(req, res);
-  }
-}));
+// ═══════════════════════════════════════════
+// 3️⃣ Body Parsers — Ye pehle aane chahiye (compression ke baad)
+// ═══════════════════════════════════════════
+// ✅ Increase limits to 50mb for JSON/urlencoded
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// ✅ Rate Limiting
+// ✅ cookie-parser — BEFORE any auth middleware
+app.use(cookieParser());
+
+// ═══════════════════════════════════════════
+// 4️⃣ Rate Limiting
+// ═══════════════════════════════════════════
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 500,                             // ✅ Increased from 100 → 500
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
+  // ✅ Skip rate limit for upload endpoints (they're heavy)
   skip: (req) => {
+    if (req.path.includes('upload')) return true;
     return false;
   }
 });
 app.use('/api/', limiter);
 
-// ✅ Body Parser
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// ═══════════════════════════════════════════
+// 5️⃣ Compression (AFTER body parsers, BEFORE routes)
+// ═══════════════════════════════════════════
+app.use(compression({
+  level: 6,
+  threshold: 1024,
+  // ✅ Don't compress uploads (multipart already heavy)
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    if (req.path.includes('upload')) return false;   // ✅ ADDED
+    return compression.filter(req, res);
+  }
+}));
 
-// ✅ cookie-parser -
-app.use(cookieParser());
+// ═══════════════════════════════════════════
+// 6️⃣ DEBUG Logger — AFTER body parsers
+// ═══════════════════════════════════════════
+app.use((req, res, next) => {
+  if (req.path.includes('upload')) {
+    console.log('═══════════════════════════════');
+    console.log('📥 Incoming:', req.method, req.path);
+    console.log('   Content-Type:', req.headers['content-type']);
+    console.log('   Content-Length:', req.headers['content-length'], 'bytes');
+    console.log('   Origin:', req.headers['origin']);
+    console.log('   User-Agent:', req.headers['user-agent']?.slice(0, 50));
+    console.log('═══════════════════════════════');
+  }
+  next();
+});
 
-
-// ✅ Cache Headers
+// ═══════════════════════════════════════════
+// 7️⃣ Cache Headers
+// ═══════════════════════════════════════════
 app.use('/api/clients', (req, res, next) => {
   if (req.method === 'GET') {
     res.set('Cache-Control', 'public, max-age=60');
@@ -139,14 +164,11 @@ app.use('/api/clients', (req, res, next) => {
   next();
 });
 
-// ✅ Audit Log Middleware
-app.use(auditLog);
-
-// ✅ Connect to MongoDB first
+// ═══════════════════════════════════════════
+// 8️⃣ Connect to MongoDB (BEFORE audit log & routes)
+// ═══════════════════════════════════════════
 connectDB().then(() => {
   console.log('✅ MongoDB Connected, initializing GridFS...');
-  
-  // ✅ GridFS synchronous call (No .catch() needed)
   try {
     initGridFS();
   } catch (err) {
@@ -157,26 +179,82 @@ connectDB().then(() => {
   process.exit(1);
 });
 
-// ✅ ✅ ✅ Routes - FIXED (no duplicate)
-app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/clients', require('./routes/clientRoutes'));
-app.use('/api/dashboard', require('./routes/dashboardRoutes'));
-app.use('/api/users', require('./routes/userRoutes'));
-app.use('/api/registrations', require('./routes/registrationRoutes'));
-app.use('/api/contracts', require('./routes/contractRoutes'));
-app.use('/api/pdfs', require('./routes/uploadGridFSRoutes'));
-app.use('/api/audit', require('./routes/auditRoutes'));
-app.use('/api/documents', require('./routes/documentRoutes')); // ✅ ONLY ONCE
-app.use('/api/policies', require('./routes/policyRoutes'));
-app.use('/api/gst', require('./routes/gstRoutes'));
-app.use('/api/income-tax', require('./routes/incomeTaxRoutes'));
-app.use('/api/hr', require('./routes/hrRoutes'));
-app.use('/api/corporate-secretariat', require('./routes/corporateSecretariatRoutes'));
-app.use('/api/financials', require('./routes/financialRoutes'));
-app.use('/api/custom-folders', require('./routes/customFolderRoutes'));
-app.use('/api/custom-files', require('./routes/customFileRoutes'));
+// ═══════════════════════════════════════════
+// 9️⃣ Audit Log Middleware — Only for specific routes
+// ═══════════════════════════════════════════
+// ❌ REMOVED: app.use(auditLog);  // was global
+// ✅ Instead, apply selectively inside routes (see below)
+// Or keep global but skip uploads:
 
-// ✅ Health Check
+app.use((req, res, next) => {
+  // ✅ Skip audit log for upload endpoints (they break res.send)
+  if (req.path.includes('upload')) {
+    return next();
+  }
+  return auditLog(req, res, next);
+});
+
+// ═══════════════════════════════════════════
+// 🔟 Routes
+// ═══════════════════════════════════════════
+app.use('/api/auth', require('./routes/authRoutes'));
+console.log('   ✅ /api/auth');
+
+app.use('/api/clients', require('./routes/clientRoutes'));
+console.log('   ✅ /api/clients');
+
+app.use('/api/dashboard', require('./routes/dashboardRoutes'));
+console.log('   ✅ /api/dashboard');
+
+app.use('/api/users', require('./routes/userRoutes'));
+console.log('   ✅ /api/users');
+
+app.use('/api/registrations', require('./routes/registrationRoutes'));
+console.log('   ✅ /api/registrations');
+
+app.use('/api/contracts', require('./routes/contractRoutes'));
+console.log('   ✅ /api/contracts');
+
+app.use('/api/pdfs', require('./routes/uploadGridFSRoutes'));
+console.log('   ✅ /api/pdfs');
+
+app.use('/api/audit', require('./routes/auditRoutes'));
+console.log('   ✅ /api/audit');
+
+app.use('/api/documents', require('./routes/documentRoutes'));
+console.log('   ✅ /api/documents');
+
+app.use('/api/policies', require('./routes/policyRoutes'));
+console.log('   ✅ /api/policies');
+
+app.use('/api/gst', require('./routes/gstRoutes'));
+console.log('   ✅ /api/gst');
+
+app.use('/api/income-tax', require('./routes/incomeTaxRoutes'));
+console.log('   ✅ /api/income-tax');
+
+app.use('/api/hr', require('./routes/hrRoutes'));
+console.log('   ✅ /api/hr');
+
+app.use('/api/corporate-secretariat', require('./routes/corporateSecretariatRoutes'));
+console.log('   ✅ /api/corporate-secretariat');
+
+app.use('/api/financials', require('./routes/financialRoutes'));
+console.log('   ✅ /api/financials');
+
+app.use('/api/custom-folders', require('./routes/customFolderRoutes'));
+console.log('   ✅ /api/custom-folders');
+
+app.use('/api/custom-files', require('./routes/customFileRoutes'));
+console.log('   ✅ /api/custom-files');
+
+
+console.log('═══════════════════════════════════════');
+
+
+// ═══════════════════════════════════════════
+// 1️⃣1️⃣ Health & Root
+// ═══════════════════════════════════════════
 app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'OK', 
@@ -185,44 +263,72 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ✅ Root
 app.get('/', (req, res) => {
   res.send('LegalVault API is running');
 });
 
-// ✅ 404 Handler
+// ═══════════════════════════════════════════
+// 1️⃣2️⃣ 404 Handler
+// ═══════════════════════════════════════════
 app.use((req, res) => {
   res.status(404).json({ message: 'Route not found' });
 });
 
-// ✅ Global Error Handler
+// ═══════════════════════════════════════════
+// 1️⃣3️⃣ Global Error Handler
+// ═══════════════════════════════════════════
 app.use((err, req, res, next) => {
   console.error('❌ Error:', {
     message: err.message,
-    stack: err.stack,
+    name: err.name,
+    code: err.code,
+    stack: err.stack?.split('\n').slice(0, 3).join('\n'), // ✅ Shorter stack
     status: err.status || 500,
     path: req.path,
     method: req.method,
     ip: req.ip
   });
 
+  // ✅ Multer-specific errors
+  if (err.name === 'MulterError') {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ 
+        message: 'File too large. Max 100MB per file.' 
+      });
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(413).json({ 
+        message: 'Too many files. Max 500 per upload.' 
+      });
+    }
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({ 
+        message: `Unexpected field: ${err.field}` 
+      });
+    }
+    return res.status(400).json({ message: err.message });
+  }
+
   const isDevelopment = process.env.NODE_ENV === 'development';
   
   res.status(err.status || 500).json({
     message: err.message || 'Something went wrong!',
     ...(isDevelopment && { 
-      error: err,
+      error: err.message,
       stack: err.stack 
     })
   });
 });
 
+// ═══════════════════════════════════════════
+// 1️⃣4️⃣ Server Listen
+// ═══════════════════════════════════════════
 const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🛡️  Security Headers: Enabled (Manual)`);
-  console.log(`🚦 Rate Limiting: 100 requests per 15 minutes`);
+  console.log(`🛡️  Security Headers: Enabled`);
+  console.log(`🚦 Rate Limiting: 500 requests per 15 min (uploads skipped)`);
 });
 
 // ✅ Graceful Shutdown

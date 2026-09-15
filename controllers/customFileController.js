@@ -428,3 +428,173 @@ exports.downloadFolderZip = async (req, res) => {
     }
   }
 };
+
+// ✅ NEW: Folder Upload — recursive folder structure support
+exports.uploadFolder = async (req, res) => {
+  try {
+    const { folderId, clientId } = req.body;
+    const files = req.files || [];
+    const paths = req.body.paths || [];
+
+    // ✅ Validate
+    if (files.length === 0) {
+      return res.status(400).json({ message: 'No files uploaded' });
+    }
+    if (!isValidObjectId(folderId)) {
+      return res.status(400).json({ message: 'Invalid folder ID' });
+    }
+    if (!isValidObjectId(clientId)) {
+      return res.status(400).json({ message: 'Invalid client ID' });
+    }
+
+    // ✅ Root folder verify
+    const rootFolder = await CustomFolder.findOne({
+      _id: folderId,
+      clientId,
+      isDeleted: false
+    });
+    if (!rootFolder) {
+      return res.status(404).json({ message: 'Root folder not found' });
+    }
+
+    // ✅ Access check
+    const hasAccess = await checkClientAccess(req.user, clientId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // ✅ GridFS check
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(500).json({ message: 'Database not connected' });
+    }
+    const bucket = getGridFS();
+    if (!bucket) return res.status(500).json({ message: 'GridFS not initialized' });
+
+    // ✅ Build unique folder paths from webkitRelativePath
+    const folderPathSet = new Set();
+    for (const p of paths) {
+      if (!p) continue;
+      const parts = p.split('/');
+      parts.pop(); // remove filename
+      // Add all ancestor paths: "A", "A/B", "A/B/C"
+      for (let i = 1; i <= parts.length; i++) {
+        folderPathSet.add(parts.slice(0, i).join('/'));
+      }
+    }
+
+    // ✅ Sort by depth (parent first, then children)
+    const sortedPaths = [...folderPathSet].sort(
+      (a, b) => a.split('/').length - b.split('/').length
+    );
+
+    // ✅ Create folders in order, map "A/B" -> folderId
+    const folderMap = new Map(); // path -> ObjectId
+
+    for (const folderPath of sortedPaths) {
+      const parts = folderPath.split('/');
+      const name = parts[parts.length - 1];
+      const parentPath = parts.slice(0, -1).join('/');
+      const parentId = parentPath
+        ? folderMap.get(parentPath)
+        : rootFolder._id;
+
+      // Check duplicate (merge if exists)
+      let folder = await CustomFolder.findOne({
+        name,
+        clientId,
+        parentFolderId: parentId,
+        isDeleted: false
+      });
+
+      if (!folder) {
+        // Compute full path from root
+        const parentPathFull = parentPath ? `/${parentPath}` : '/';
+        folder = new CustomFolder({
+          name,
+          clientId,
+          parentFolderId: parentId,
+          path: parentPathFull,
+          isRoot: false,
+          createdBy: req.user.id
+        });
+        await folder.save();
+      }
+
+      folderMap.set(folderPath, folder._id);
+    }
+
+    // ✅ Upload files to GridFS with correct folderId
+    const uploadedFiles = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const relativePath = paths[i] || file.originalname;
+      const parts = relativePath.split('/');
+      parts.pop(); // remove filename
+      const folderPath = parts.join('/');
+      const targetFolderId = folderPath
+        ? folderMap.get(folderPath)
+        : rootFolder._id;
+
+      if (!targetFolderId) {
+        console.warn(`⚠️ Skipping ${file.originalname} — no folder match`);
+        continue;
+      }
+
+      // Upload stream to GridFS
+      const uploadStream = bucket.openUploadStream(file.originalname, {
+        contentType: file.mimetype,
+        metadata: {
+          uploadedBy: req.user.id,
+          clientId,
+          folderId: targetFolderId,
+          uploadDate: new Date()
+        }
+      });
+
+      uploadStream.write(file.buffer);
+      uploadStream.end();
+
+      const fileId = await new Promise((resolve, reject) => {
+        uploadStream.on('finish', () => resolve(uploadStream.id));
+        uploadStream.on('error', reject);
+      });
+
+      // Save CustomFile doc
+      const doc = new CustomFile({
+        filename: file.originalname,
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+        fileType: getFileType(file.mimetype),
+        fileSize: file.size,
+        fileId,
+        folderId: targetFolderId,
+        clientId,
+        uploadedBy: req.user.id
+      });
+      await doc.save();
+
+      uploadedFiles.push({
+        id: doc._id,
+        filename: doc.filename,
+        fileType: doc.fileType,
+        mimeType: doc.mimeType,
+        fileSize: doc.fileSize,
+        fileId: doc.fileId,
+        folderId: targetFolderId,
+        url: `/api/custom-files/file/${fileId}`
+      });
+    }
+
+    res.json({
+      message: `✅ ${uploadedFiles.length} file(s) uploaded across ${sortedPaths.length} folder(s)`,
+      foldersCreated: sortedPaths.length,
+      filesCount: uploadedFiles.length,
+      files: uploadedFiles
+    });
+
+  } catch (error) {
+    console.error('❌ Folder upload error:', error);
+    res.status(500).json({ message: error.message });
+  }
+};

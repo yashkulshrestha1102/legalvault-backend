@@ -1,0 +1,16 @@
+{
+  "watch": ["controllers", "routes", "models", "middleware", "config", "utils"],
+  "ignore": [
+    "node_modules/*",
+    "*.log",
+    "uploads/*",
+    "temp/*",
+    "public/*",
+    "dist/*",
+    "scripts/*",
+    "fix-urls.js",
+    "test-mongo.js"
+  ],
+  "ext": "js,json",
+  "delay": "500"
+}
