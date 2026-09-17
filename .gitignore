@@ -25,3 +25,9 @@ npm-debug.log*
 *.backup
 *_backup_*/
 .gitignore.backup
+# Backups (local only)
+backup-*.json
+orphaned-files-backup.json
+*-content.txt
+fix-urls.js
+

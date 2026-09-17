@@ -23,11 +23,30 @@ const CustomFileSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+
+  // OLD (GridFS) - optional for backwards compatibility
   fileId: {
     type: mongoose.Schema.Types.ObjectId,
-    required: true,
-    index: true
+    required: false,
+    index: true,
+    sparse: true,
   },
+
+  // NEW (R2) - optional
+  r2Key: {
+    type: String,
+    required: false,
+    index: true,
+    sparse: true,
+  },
+
+  // Storage type indicator
+  storageType: {
+    type: String,
+    enum: ['gridfs', 'r2'],
+    default: 'gridfs',
+  },
+
   folderId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'CustomFolder',
