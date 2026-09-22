@@ -14,7 +14,23 @@ const AuditLogSchema = new mongoose.Schema({
   },
   entity: {
     type: String,
-    enum: ['CLIENT', 'REGISTRATION', 'CONTRACT', 'USER', 'DOCUMENT', 'FOLDER', 'AUTOMATION', 'OTHER'],
+    // ✅ EXPANDED: Added new entities
+    enum: [
+      'CLIENT',
+      'REGISTRATION',
+      'CONTRACT',
+      'POLICY',           // ✅ NEW
+      'GST',              // ✅ NEW
+      'INCOME_TAX',       // ✅ NEW
+      'HR',               // ✅ NEW
+      'CORPORATE_SECRETARIAT',  // ✅ NEW
+      'FINANCIAL',        // ✅ NEW
+      'USER',
+      'DOCUMENT',
+      'FOLDER',           // ✅ NEW
+      'AUTOMATION',
+      'OTHER'
+    ],
     required: true
   },
   entityId: { type: mongoose.Schema.Types.ObjectId },
@@ -46,5 +62,6 @@ AuditLogSchema.index({ clientId: 1 });
 AuditLogSchema.index({ action: 1 });
 AuditLogSchema.index({ entity: 1 });
 AuditLogSchema.index({ rollbacked: 1 });
+AuditLogSchema.index({ 'user.id': 1 });   // ✅ NEW: user filter fast
 
 module.exports = mongoose.model('AuditLog', AuditLogSchema);

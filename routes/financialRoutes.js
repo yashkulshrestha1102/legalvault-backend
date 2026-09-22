@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const auditLog = require('../middleware/audit');
+
 const {
   getFinancialByClient,
   getFinancialById,
@@ -19,12 +21,12 @@ router.get('/client/:clientId', getFinancialByClient);
 router.get('/:id', getFinancialById);
 
 // ✅ Create Financial record
-router.post('/', createFinancial);
+router.post('/',auditLog, createFinancial);
 
 // ✅ Update Financial record
-router.put('/:id', updateFinancial);
+router.put('/:id',auditLog, updateFinancial);
 
 // ✅ Delete Financial record
-router.delete('/:id', deleteFinancial);
+router.delete('/:id',auditLog, deleteFinancial);
 
 module.exports = router;

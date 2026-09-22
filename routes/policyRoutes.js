@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const auditLog = require('../middleware/audit');
+
 const {
   getPoliciesByClient,
   getPolicyById,
@@ -19,12 +21,12 @@ router.get('/client/:clientId', getPoliciesByClient);
 router.get('/:id', getPolicyById);
 
 // ✅ Create policy
-router.post('/', createPolicy);
+router.post('/',auditLog, createPolicy);
 
 // ✅ Update policy
-router.put('/:id', updatePolicy);
+router.put('/:id',auditLog, updatePolicy);
 
 // ✅ Delete policy
-router.delete('/:id', deletePolicy);
+router.delete('/:id',auditLog, deletePolicy);
 
 module.exports = router;

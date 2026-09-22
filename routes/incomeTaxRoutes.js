@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const auditLog = require('../middleware/audit');
+
 const {
   getIncomeTaxByClient,
   getIncomeTaxById,
@@ -19,12 +21,12 @@ router.get('/client/:clientId', getIncomeTaxByClient);
 router.get('/:id', getIncomeTaxById);
 
 // ✅ Create Income Tax record
-router.post('/', createIncomeTax);
+router.post('/',auditLog, createIncomeTax);
 
 // ✅ Update Income Tax record
-router.put('/:id', updateIncomeTax);
+router.put('/:id',auditLog, updateIncomeTax);
 
 // ✅ Delete Income Tax record
-router.delete('/:id', deleteIncomeTax);
+router.delete('/:id',auditLog, deleteIncomeTax);
 
 module.exports = router;

@@ -9,7 +9,7 @@ const compression = require('compression');
 const morgan = require('morgan');
 const connectDB = require('./config/db');
 const { initGridFS } = require('./config/gridfs');
-const auditLog = require('./middleware/audit');
+// const auditLog = require('./middleware/audit');
 const cookieParser = require('cookie-parser');
 
 const app = express();
@@ -186,13 +186,13 @@ connectDB().then(() => {
 // ✅ Instead, apply selectively inside routes (see below)
 // Or keep global but skip uploads:
 
-app.use((req, res, next) => {
-  // ✅ Skip audit log for upload endpoints (they break res.send)
-  if (req.path.includes('upload')) {
-    return next();
-  }
-  return auditLog(req, res, next);
-});
+// app.use((req, res, next) => {
+//   // ✅ Skip audit log for upload endpoints (they break res.send)
+//   if (req.path.includes('upload')) {
+//     return next();
+//   }
+//   return auditLog(req, res, next);
+// });
 
 // ═══════════════════════════════════════════
 // 🔟 Routes

@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const multer = require('multer');
+const auditLog = require('../middleware/audit');
+
 const {
   uploadFiles,
   getFilesByFolder,
@@ -73,8 +75,8 @@ router.get('/folder/:folderId', getFilesByFolder);
 router.get('/search/:clientId', searchFiles);
 router.get('/download-folder/:folderId', downloadFolderZip);
 router.get('/file/:fileId', streamFile);
-router.put('/:id/rename', renameFile);
-router.delete('/:id', deleteFile);
+router.put('/:id/rename',auditLog, renameFile);
+router.delete('/:id',auditLog, deleteFile);
 
 console.log('✅ customFileRoutes.js routes registered:');
 console.log('   POST /upload');

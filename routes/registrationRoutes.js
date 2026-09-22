@@ -3,6 +3,8 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const auth = require('../middleware/auth');
 const Registration = require('../models/Registration');
+const auditLog = require('../middleware/audit');  
+
 
 // ✅ Validation Rules
 const validateRegistration = [
@@ -53,7 +55,7 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // ✅ POST - Create registration
-router.post('/', auth, validateRegistration, handleValidation, async (req, res) => {
+router.post('/', auth, auditLog, validateRegistration, handleValidation, async (req, res) => {
   try {
     console.log('📥 POST /registrations - Request body:', req.body);
     const registration = new Registration({
@@ -70,7 +72,7 @@ router.post('/', auth, validateRegistration, handleValidation, async (req, res) 
 });
 
 // ✅ PUT - Update registration
-router.put('/:id', auth, validateRegistration, handleValidation, async (req, res) => {
+router.put('/:id', auth,auditLog, validateRegistration, handleValidation, async (req, res) => {
   try {
     console.log('📥 PUT /registrations/:id - ID:', req.params.id);
     const registration = await Registration.findByIdAndUpdate(
@@ -90,7 +92,7 @@ router.put('/:id', auth, validateRegistration, handleValidation, async (req, res
 });
 
 // ✅ DELETE - Delete registration
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', auth,auditLog, async (req, res) => {
   try {
     console.log('📥 DELETE /registrations/:id - ID:', req.params.id);
     const registration = await Registration.findByIdAndDelete(req.params.id);

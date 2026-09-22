@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const auditLog = require('../middleware/audit');
+
 const {
   getCSByClient,
   getCSById,
@@ -19,12 +21,12 @@ router.get('/client/:clientId', getCSByClient);
 router.get('/:id', getCSById);
 
 // ✅ Create record
-router.post('/', createCS);
+router.post('/',auditLog, createCS);
 
 // ✅ Update record
-router.put('/:id', updateCS);
+router.put('/:id',auditLog, updateCS);
 
 // ✅ Delete record
-router.delete('/:id', deleteCS);
+router.delete('/:id',auditLog, deleteCS);
 
 module.exports = router;

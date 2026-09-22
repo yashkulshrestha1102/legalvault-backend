@@ -6,10 +6,15 @@ const {
   login, 
   logout, 
   forgotPassword, 
-  resetPassword 
+  resetPassword,
+  getMe,                          // ✅ ADDED
 } = require('../controllers/authController');
 
+const auth = require('../middleware/auth');   // ✅ ADDED
+
+// ═══════════════════════════════════════════
 // ✅ Validation Rules
+// ═══════════════════════════════════════════
 const validateRegister = [
   body('name').notEmpty().withMessage('Name is required'),
   body('email').isEmail().withMessage('Valid email is required'),
@@ -30,7 +35,9 @@ const validateResetPassword = [
   body('newPassword').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
 ];
 
+// ═══════════════════════════════════════════
 // ✅ Handle Validation Errors
+// ═══════════════════════════════════════════
 const handleValidation = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -39,29 +46,18 @@ const handleValidation = (req, res, next) => {
   next();
 };
 
-
-// ✅ Logout - Clear HTTP-only cookie
-exports.logout = async (req, res) => {
-  try {
-    res.clearCookie('token', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      path: '/',
-    });
-    
-    console.log('✅ Logout successful');
-    res.json({ message: 'Logged out successfully' });
-  } catch (error) {
-    console.error('❌ Logout error:', error);
-    res.status(500).json({ message: 'Logout failed' });
-  }
-};
+// ═══════════════════════════════════════════
 // ✅ Public Routes
+// ═══════════════════════════════════════════
 router.post('/register', validateRegister, handleValidation, register);
 router.post('/login', validateLogin, handleValidation, login);
 router.post('/forgot-password', validateForgotPassword, handleValidation, forgotPassword);
 router.post('/reset-password', validateResetPassword, handleValidation, resetPassword);
 router.post('/logout', logout);
+
+// ═══════════════════════════════════════════
+// ✅ Protected Routes (require auth)
+// ═══════════════════════════════════════════
+router.get('/me', auth, getMe); 
 
 module.exports = router;

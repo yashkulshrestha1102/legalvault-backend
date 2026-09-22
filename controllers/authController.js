@@ -106,7 +106,7 @@ exports.login = async (req, res) => {
 
     // ✅ Generate JWT
     const token = jwt.sign(
-      { id: user._id, email: user.email, role: user.role },
+      { id: user._id, email: user.email, role: user.role, name: user.name, },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -243,5 +243,53 @@ exports.resetPassword = async (req, res) => {
   } catch (error) {
     console.error('❌ Reset password error:', error);
     res.status(500).json({ message: 'Failed to reset password. Please try again.' });
+  }
+};
+
+
+
+// ═══════════════════════════════════════════
+// ✅ Get Current User — /api/auth/me
+// Returns fresh user data from database
+// ═══════════════════════════════════════════
+exports.getMe = async (req, res) => {
+  try {
+    // ✅ req.user decoded JWT se aata hai (auth middleware set karta hai)
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+
+    // ✅ Fresh data from DB — not from JWT
+    const user = await User.findById(req.user.id).select('-password');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // ✅ Inactive user check — security
+    if (user.status === 'Inactive') {
+      return res.status(403).json({ 
+        message: 'Account is inactive. Please contact administrator.' 
+      });
+    }
+
+    // ✅ Same shape as login response (frontend compatibility)
+    res.json({
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        folderPermissions: user.folderPermissions || [],
+        department: user.department || 'General',
+        phone: user.phone || '',
+        status: user.status || 'Active',
+        createdAt: user.createdAt,
+      },
+    });
+
+  } catch (error) {
+    console.error('❌ GetMe error:', error);
+    res.status(500).json({ message: 'Failed to fetch user data' });
   }
 };

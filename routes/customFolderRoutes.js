@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
+const auditLog = require('../middleware/audit');
+
 const {
   getFoldersByClient,
   getFolderById,
@@ -13,8 +15,8 @@ router.use(auth);
 
 router.get('/client/:clientId', getFoldersByClient);
 router.get('/:id', getFolderById);
-router.post('/', createFolder);
-router.put('/:id/rename', renameFolder);
-router.delete('/:id', deleteFolder);
+router.post('/',auditLog, createFolder);
+router.put('/:id/rename',auditLog, renameFolder);
+router.delete('/:id',auditLog, deleteFolder);
 
 module.exports = router;

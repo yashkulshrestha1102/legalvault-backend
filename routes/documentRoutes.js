@@ -7,6 +7,7 @@ const { ObjectId } = require('mongodb');
 const mongoose = require('mongoose');
 const { getGridFS } = require('../config/gridfs');
 const { uploadFilesSmart, deleteFileSmart } = require('../controllers/storageController');
+const auditLog = require('../middleware/audit');
 
 // Multer memory storage (Buffer in RAM)
 const storage = multer.memoryStorage();
@@ -34,7 +35,7 @@ const upload = multer({
 // =========================================================================
 // UPLOAD - Smart (R2 or GridFS based on STORAGE_BACKEND env)
 // =========================================================================
-router.post('/upload', auth, upload.array('documents', 50), async (req, res) => {
+router.post('/upload', auth,auditLog, upload.array('documents', 50), async (req, res) => {
   try {
     console.log('Files received:', req.files?.length || 0);
 
@@ -110,7 +111,7 @@ router.post('/upload', auth, upload.array('documents', 50), async (req, res) => 
 // =========================================================================
 // RENAME document
 // =========================================================================
-router.put('/:id/rename', auth, async (req, res) => {
+router.put('/:id/rename', auth,auditLog, async (req, res) => {
   try {
     const { newName } = req.body;
     if (!newName || newName.trim() === '') {
@@ -149,7 +150,7 @@ router.get('/client/:clientId', auth, async (req, res) => {
 // =========================================================================
 // DELETE document (soft delete + storage cleanup)
 // =========================================================================
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', auth,auditLog, async (req, res) => {
   try {
     const doc = await Document.findOneAndUpdate(
       { _id: req.params.id, isDeleted: false },

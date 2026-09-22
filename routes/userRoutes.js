@@ -7,6 +7,8 @@ const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const { sendUserWelcomeEmail } = require('../utils/email');
 const mongoose = require('mongoose');
+const auditLog = require('../middleware/audit');
+
 
 console.log('✅ userRoutes.js loaded - Production Fix');
 
@@ -63,7 +65,7 @@ router.get('/', [auth, admin], async (req, res) => {
 });
 
 // POST - Create user (Admin only) - WITH EMAIL & NOTIFICATION
-router.post('/', [auth, admin], validateUser, handleValidation, async (req, res) => {
+router.post('/', [auth, admin,auditLog], validateUser, handleValidation, async (req, res) => {
   try {
     console.log('📥 POST /api/users - Request body:', JSON.stringify(req.body, null, 2));
 
@@ -136,7 +138,7 @@ router.post('/', [auth, admin], validateUser, handleValidation, async (req, res)
 });
 
 // ✅ PUT - Update user
-router.put('/:id', auth, validateUser, handleValidation, async (req, res) => {
+router.put('/:id', auth,auditLog, validateUser, handleValidation, async (req, res) => {
   try {
     const { name, email, department, role, status, phone, folderPermissions, password } = req.body;
     
@@ -188,7 +190,7 @@ router.put('/:id', auth, validateUser, handleValidation, async (req, res) => {
 });
 
 // ✅ DELETE - Delete user with ObjectId validation
-router.delete('/:id', [auth, admin], async (req, res) => {
+router.delete('/:id', [auth, admin, auditLog], async (req, res) => {
   try {
     const { id } = req.params;
     

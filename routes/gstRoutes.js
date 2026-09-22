@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const auditLog = require('../middleware/audit');
+
 const {
   getGSTByClient,
   getGSTById,
@@ -19,12 +21,12 @@ router.get('/client/:clientId', getGSTByClient);
 router.get('/:id', getGSTById);
 
 // ✅ Create GST
-router.post('/', createGST);
+router.post('/',auditLog, createGST);
 
 // ✅ Update GST
-router.put('/:id', updateGST);
+router.put('/:id',auditLog, updateGST);
 
 // ✅ Delete GST
-router.delete('/:id', deleteGST);
+router.delete('/:id',auditLog, deleteGST);
 
 module.exports = router;

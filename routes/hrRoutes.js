@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const auditLog = require('../middleware/audit');
+
 const {
   getHRByClient,
   getHRById,
@@ -19,12 +21,12 @@ router.get('/client/:clientId', getHRByClient);
 router.get('/:id', getHRById);
 
 // ✅ Create HR record
-router.post('/', createHR);
+router.post('/',  auditLog,createHR);
 
 // ✅ Update HR record
-router.put('/:id', updateHR);
+router.put('/:id', auditLog, updateHR);
 
 // ✅ Delete HR record
-router.delete('/:id', deleteHR);
+router.delete('/:id', auditLog, deleteHR);
 
 module.exports = router;

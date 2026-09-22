@@ -3,6 +3,8 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const auth = require('../middleware/auth');
 const Contract = require('../models/Contract');
+const auditLog = require('../middleware/audit');
+
 
 // ✅ Validation Rules
 const validateContract = [
@@ -55,7 +57,7 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // ✅ POST - Create contract
-router.post('/', auth, validateContract, handleValidation, async (req, res) => {
+router.post('/', auth,auditLog, validateContract, handleValidation, async (req, res) => {
   try {
     const contract = new Contract({
       ...req.body,
@@ -70,7 +72,7 @@ router.post('/', auth, validateContract, handleValidation, async (req, res) => {
 });
 
 // ✅ PUT - Update contract
-router.put('/:id', auth, validateContract, handleValidation, async (req, res) => {
+router.put('/:id', auth,auditLog, validateContract, handleValidation, async (req, res) => {
   try {
     const contract = await Contract.findOneAndUpdate(
       { _id: req.params.id, isDeleted: false },
@@ -88,7 +90,7 @@ router.put('/:id', auth, validateContract, handleValidation, async (req, res) =>
 });
 
 // ✅ DELETE - Delete contract (Soft Delete)
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id',auditLog, auth, async (req, res) => {
   try {
     const contract = await Contract.findOneAndUpdate(
       { _id: req.params.id, isDeleted: false },
