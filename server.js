@@ -36,7 +36,7 @@ app.use((req, res, next) => {
     'https://legalvault-ochre.vercel.app',
     'https://legalvault.businezexcellence.com',
     'https://legalvault-jm2n.onrender.com',
-    'legalvault-backend.onrender.com'
+    'https://legalvault-backend.onrender.com'
   ];
   
   const origin = req.headers.origin;
