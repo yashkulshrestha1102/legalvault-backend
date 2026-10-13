@@ -125,6 +125,7 @@ exports.login = async (req, res) => {
         role: user.role,
         folderPermissions: user.folderPermissions || [],
       },
+      token: token,
     });
   } catch (error) {
     console.error('❌ Login error:', error);
