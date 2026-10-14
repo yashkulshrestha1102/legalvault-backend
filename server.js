@@ -242,8 +242,19 @@ console.log('   ✅ /api/corporate-secretariat');
 app.use('/api/financials', require('./routes/financialRoutes'));
 console.log('   ✅ /api/financials');
 
+
+app.use('/api/custom-folders', (req, res, next) => {
+  console.log(
+    '[CUSTOM-FOLDERS HIT]',
+    req.method,
+    req.originalUrl
+  );
+  next();
+});
+
 app.use('/api/custom-folders', require('./routes/customFolderRoutes'));
 console.log('   ✅ /api/custom-folders');
+
 
 app.use('/api/custom-files', require('./routes/customFileRoutes'));
 console.log('   ✅ /api/custom-files');
