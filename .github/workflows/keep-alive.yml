@@ -1,0 +1,26 @@
+name: Keep Backend Alive
+
+on:
+  schedule:
+    # ✅ Every 10 minutes — Render free tier 15 min inactivity pe sota hai
+    - cron: '*/10 * * * *'
+  workflow_dispatch:  # Manual trigger ke liye
+
+jobs:
+  ping-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping LegalVault Backend
+        run: |
+          echo "🕐 $(date)"
+          echo "📡 Pinging backend..."
+          
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" https://legalvault-backend.onrender.com/health)
+          
+          echo "✅ Response Code: $RESPONSE"
+          
+          if [ "$RESPONSE" = "200" ]; then
+            echo "🎉 Backend is alive!"
+          else
+            echo "⚠️ Backend returned: $RESPONSE"
+          fi
