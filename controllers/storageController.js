@@ -23,7 +23,7 @@ const uploadToR2Storage = async (files, folder) => {
     originalName: f.filename,
     fileSize: f.size,
     mimeType: f.mimeType,
-    fileType: getFileType(f.mimeType),
+    fileType: getFileType(f.mimeType, f.filename),
     fileId: null,
   }));
 };

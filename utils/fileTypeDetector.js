@@ -1,50 +1,85 @@
 /**
- * Detect file type category from MIME type
+ * Detect file type category from MIME type AND filename
+ * v2 — Now handles PowerPoint, better Word/Excel detection
  */
-const getFileType = (mimeType) => {
-  if (!mimeType) return 'other';
+
+const getFileType = (mimeType, filename = '') => {
+  const ext = (filename || '').toLowerCase().split('.').pop() || '';
+  const mime = (mimeType || '').toLowerCase();
+
+  if (!mime && !ext) return 'other';
 
   // ✅ PDF
-  if (mimeType === 'application/pdf') return 'pdf';
+  if (mime === 'application/pdf' || ext === 'pdf') return 'pdf';
 
   // ✅ Images
-  if (mimeType.startsWith('image/')) return 'image';
-
-  // ✅ Word documents
   if (
-    mimeType === 'application/msword' ||
-    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    mime.startsWith('image/') ||
+    ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'tiff', 'ico'].includes(ext)
+  ) return 'image';
+
+  // ✅ Word (must check before generic xml/json)
+  if (
+    mime.includes('wordprocessingml') ||
+    mime === 'application/msword' ||
+    ['doc', 'docx'].includes(ext)
   ) return 'word';
 
   // ✅ Excel / CSV
   if (
-    mimeType === 'application/vnd.ms-excel' ||
-    mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-    mimeType === 'text/csv'
+    mime.includes('spreadsheetml') ||
+    mime === 'application/vnd.ms-excel' ||
+    ['xls', 'xlsx'].includes(ext)
   ) return 'excel';
 
-  // ✅ XML files (Tally data, config files) — treat as TEXT
+  // ✅ CSV (separate but same display)
+  if (mime === 'text/csv' || ext === 'csv') return 'excel';
+
+  // ✅ PowerPoint
   if (
-    mimeType === 'application/xml' ||
-    mimeType === 'text/xml' ||
-    mimeType === 'application/x-xml' ||
-    mimeType.includes('xml')
+    mime.includes('presentationml') ||
+    mime === 'application/vnd.ms-powerpoint' ||
+    ['ppt', 'pptx'].includes(ext)
+  ) return 'pptx';
+
+  // ✅ ZIP
+  if (
+    mime.includes('zip') ||
+    mime.includes('compressed') ||
+    ['zip'].includes(ext)
+  ) return 'zip';
+
+  // ✅ RAR / 7z
+  if (
+    mime.includes('rar') ||
+    ['rar', '7z'].includes(ext)
+  ) return 'rar';
+
+  // ✅ XML (must be AFTER word/excel/pptx checks!)
+  if (
+    mime === 'application/xml' ||
+    mime === 'text/xml' ||
+    mime === 'application/x-xml' ||
+    ext === 'xml'
+  ) return 'xml';
+
+  // ✅ JSON
+  if (mime === 'application/json' || ext === 'json') return 'json';
+
+  // ✅ Text / Code
+  if (
+    mime.startsWith('text/') ||
+    ['txt', 'md', 'log', 'html', 'htm', 'css', 'js', 'jsx', 'ts', 'tsx', 'py', 'java', 'sql', 'env', 'yaml', 'yml'].includes(ext)
   ) return 'text';
 
-  // ✅ JSON files — treat as TEXT
-  if (
-    mimeType === 'application/json' ||
-    mimeType.includes('json')
-  ) return 'text';
-
-  // ✅ Other text files
-  if (mimeType.startsWith('text/')) return 'text';
+  // ✅ Media (optional)
+  if (mime.startsWith('video/') || mime.startsWith('audio/')) return 'media';
 
   return 'other';
 };
 
 /**
- * Allowed MIME types for upload (broad — allow everything legal)
+ * Allowed MIME types for upload
  */
 const ALLOWED_MIME_TYPES = [
   // PDF
@@ -62,32 +97,23 @@ const ALLOWED_MIME_TYPES = [
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   // Text
   'text/plain', 'text/csv', 'text/html', 'text/markdown',
-  // ✅ XML files (Tally, config)
+  // XML
   'application/xml', 'text/xml', 'application/x-xml',
-  // ✅ JSON
+  // JSON
   'application/json',
-  // Archives (optional)
+  // Archives
   'application/zip', 'application/x-zip-compressed',
   'application/x-rar-compressed',
-  // ✅ Fallback for unknown types (some Tally files come as octet-stream)
-  'application/octet-stream'
+  // Fallback
+  'application/octet-stream',
 ];
 
-/**
- * Check if a mime type is allowed for upload
- * Uses both whitelist + fallback patterns
- */
 const isAllowedMimeType = (mimeType) => {
   if (!mimeType) return false;
-
-  // ✅ Direct match in whitelist
   if (ALLOWED_MIME_TYPES.includes(mimeType)) return true;
-
-  // ✅ Fallback: allow anything that looks like XML/JSON/text
   if (mimeType.includes('xml')) return true;
   if (mimeType.includes('json')) return true;
   if (mimeType.startsWith('text/')) return true;
-
   return false;
 };
 
