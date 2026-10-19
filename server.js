@@ -11,6 +11,17 @@ const connectDB = require('./config/db');
 const { initGridFS } = require('./config/gridfs');
 // const auditLog = require('./middleware/audit');
 const cookieParser = require('cookie-parser');
+const cron = require('node-cron');
+const { runDailyReminders } = require('./controllers/complianceController');
+
+cron.schedule('0 9 * * *', async () => {
+  console.log('⏰ Cron: Daily compliance check');
+  try {
+    await runDailyReminders();
+  } catch (err) {
+    console.error('Cron error:', err.message);
+  }
+}, { timezone: 'Asia/Kolkata' });
 
 const app = express();
 
@@ -277,6 +288,14 @@ app.get('/health', (req, res) => {
 app.get('/', (req, res) => {
   res.send('LegalVault API is running');
 });
+
+
+
+
+
+// existing ke baad
+app.use('/api/compliance', require('./routes/complianceRoutes'));
+console.log('   ✅ /api/compliance');
 
 // ═══════════════════════════════════════════
 // 1️⃣2️⃣ 404 Handler

@@ -140,7 +140,59 @@ const sendUserWelcomeEmail = async (email, name, password) => {
   }
 };
 
+
+
+
+
+// ═══════════════════════════════════════════
+// ✅ Compliance Reminder Email
+// ═══════════════════════════════════════════
+const sendComplianceReminderEmail = async ({ to, name, complianceName, dueDate, daysLeft, period, notes }) => {
+  console.log('📧 Compliance reminder to:', to);
+  try {
+    if (apiInstance) {
+      const sendSmtpEmail = new Brevo.SendSmtpEmail();
+      sendSmtpEmail.subject = `⏰ Reminder: ${complianceName} due in ${daysLeft} day(s)`;
+      sendSmtpEmail.htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px;">
+          <div style="max-width: 500px; background: white; padding: 30px; border-radius: 10px; margin: 0 auto;">
+            <h1 style="color: #0D9488; text-align: center;">LegalVault</h1>
+            <h2>⏰ Compliance Reminder</h2>
+            <p>Hi ${name || 'Team'},</p>
+            <p><strong>${complianceName}</strong> ki due date <strong>${new Date(dueDate).toLocaleDateString('en-IN')}</strong> hai.</p>
+            <p>Sirf <strong>${daysLeft} din</strong> bache hain!</p>
+            ${period ? `<p><strong>Period:</strong> ${period}</p>` : ''}
+            ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
+            <p style="color: #e11d48;">Please time par file kar dijiye taaki penalty na lage.</p>
+          </div>
+        </body>
+        </html>
+      `;
+      sendSmtpEmail.sender = {
+        name: 'LegalVault Compliance',
+        email: process.env.EMAIL_FROM || 'noreply@businezexcellence.com',
+      };
+      sendSmtpEmail.to = [{ email: to }];
+      await apiInstance.sendTransacEmail(sendSmtpEmail);
+      console.log('✅ Compliance email sent');
+      return { success: true };
+    }
+    console.log('📧 FALLBACK: Would send compliance email to', to);
+    return { success: true, fallback: true };
+  } catch (error) {
+    console.error('❌ Compliance email error:', error.message);
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = { 
   sendPasswordResetEmail,
-  sendUserWelcomeEmail 
+  sendUserWelcomeEmail ,
+  sendComplianceReminderEmail,
 };
+
+
+
+
