@@ -1,198 +1,101 @@
-const Brevo = require('@getbrevo/brevo');
+const { Resend } = require('resend');
 
-let apiInstance = null;
+// ✅ Resend instance initialize karo
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-if (process.env.BREVO_API_KEY) {
-  try {
-    // ✅ Brevo v5/v6 SDK - new syntax
-    const brevo = require('@getbrevo/brevo');
-    
-    // Try different initialization methods based on SDK version
-    if (brevo.TransactionalEmailsApi) {
-      // New SDK
-      const apiInstanceLocal = new brevo.TransactionalEmailsApi();
-      
-      if (apiInstanceLocal.setApiKey) {
-        apiInstanceLocal.setApiKey(
-          brevo.TransactionalEmailsApiApiKeys?.apiKey || 'api-key',
-          process.env.BREVO_API_KEY
-        );
-        apiInstance = apiInstanceLocal;
-        console.log('✅ Brevo API initialized (new SDK)');
-      }
-    } else if (brevo.ApiClient) {
-      // Old SDK
-      const defaultClient = brevo.ApiClient.instance;
-      if (defaultClient?.authentications?.['api-key']) {
-        defaultClient.authentications['api-key'].apiKey = process.env.BREVO_API_KEY;
-        apiInstance = new brevo.TransactionalEmailsApi();
-        console.log('✅ Brevo API initialized (old SDK)');
-      }
-    } else {
-      console.log('⚠️ Brevo SDK version not recognized - emails will use fallback');
-    }
-  } catch (error) {
-    console.error('⚠️ Brevo API init error (non-critical):', error.message);
-    console.log('📧 Email fallback mode: Emails will be logged to console only');
-    // ⚠️ Don't crash - emails will use fallback
+// ✅ Core function: Email bhejne ke liye
+const sendEmail = async ({ to, subject, htmlContent }) => {
+  if (!process.env.RESEND_API_KEY) {
+    console.log('⚠️ RESEND_API_KEY not set — Email fallback mode');
+    console.log(`📧 To: ${to} | Subject: ${subject}`);
+    return { success: true, fallback: true };
   }
-} else {
-  console.log('⚠️ BREVO_API_KEY not set - email fallback mode active');
-}
-
-
-
-const sendPasswordResetEmail = async (email, resetToken) => {
-  const resetLink = `https://legalvault.businezexcellence.com/reset-password?token=${resetToken}`;
-  
-  console.log(`📧 Sending to: ${email}`);
-  console.log(`🔗 Link: ${resetLink}`);
 
   try {
-    if (apiInstance) {
-      const sendSmtpEmail = new Brevo.SendSmtpEmail();
-      sendSmtpEmail.subject = '🔑 Password Reset - LegalVault';
-      sendSmtpEmail.htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head><meta charset="UTF-8"></head>
-        <body style="font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px;">
-          <div style="max-width: 500px; background: white; padding: 30px; border-radius: 10px; margin: 0 auto;">
-            <h1 style="color: #0D9488; text-align: center;">LegalVault</h1>
-            <h2>Password Reset Request</h2>
-            <p>Click the button below to reset your password:</p>
-            <div style="text-align: center;">
-              <a href="${resetLink}" style="background: #0D9488; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a>
-            </div>
-            <p style="font-size: 12px; color: #888;">This link expires in 1 hour.</p>
-            <p style="font-size: 12px; color: #888;">If you didn't request this, please ignore this email.</p>
-          </div>
-        </body>
-        </html>
-      `;
-      sendSmtpEmail.sender = { 
-        name: 'LegalVault', 
-        email: process.env.EMAIL_FROM || 'noreply@businezexcellence.com' 
-      };
-      sendSmtpEmail.to = [{ email: email }];
+    const { data, error } = await resend.emails.send({
+      from: process.env.EMAIL_FROM || 'onboarding@resend.dev', // Resend ka default test email
+      to: [to],
+      subject: subject,
+      html: htmlContent,
+    });
 
-      const result = await apiInstance.sendTransacEmail(sendSmtpEmail);
-      console.log('✅ Email sent via Brevo API');
-      return { success: true };
-    } else {
-      console.log('📧 FALLBACK - No API configured');
-      console.log(`📧 To: ${email}`);
-      console.log(`🔗 Link: ${resetLink}`);
-      return { success: true, fallback: true };
+    if (error) {
+      console.error('❌ Resend API Error:', error);
+      return { success: false, error: error.message };
     }
-  } catch (error) {
-    console.error('❌ Email error:', error.message);
-    if (error.response) {
-      console.error('📦 Response:', error.response.body);
-    }
-    throw new Error(`Failed to send email: ${error.message}`);
+
+    console.log('✅ Email sent via Resend. ID:', data?.id);
+    return { success: true };
+  } catch (err) {
+    console.error('❌ Resend send error:', err.message);
+    return { success: false, error: err.message };
   }
 };
-
-const sendUserWelcomeEmail = async (email, name, password) => {
-  console.log('📧 Sending welcome email to:', email);
-
-  try {
-    if (apiInstance) {
-      const sendSmtpEmail = new Brevo.SendSmtpEmail();
-      sendSmtpEmail.subject = '🎉 Welcome to LegalVault!';
-      sendSmtpEmail.htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head><meta charset="UTF-8"></head>
-        <body style="font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px;">
-          <div style="max-width: 500px; background: white; padding: 30px; border-radius: 10px; margin: 0 auto;">
-            <h1 style="color: #0D9488; text-align: center;">🎉 LegalVault</h1>
-            <h2>Welcome ${name || 'User'}!</h2>
-            <p>Your account has been created successfully.</p>
-            <div style="background: #f0f0f0; padding: 15px; border-radius: 5px; margin: 15px 0;">
-              <p><strong>Email:</strong> ${email}</p>
-              <p><strong>Password:</strong> ${password}</p>
-            </div>
-            <div style="text-align: center;">
-              <a href="https://legalvault.businezexcellence.com" style="background: #0D9488; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Login Now</a>
-            </div>
-          </div>
-        </body>
-        </html>
-      `;
-      sendSmtpEmail.sender = { 
-        name: 'LegalVault', 
-        email: process.env.EMAIL_FROM || 'noreply@businezexcellence.com' 
-      };
-      sendSmtpEmail.to = [{ email: email }];
-
-      await apiInstance.sendTransacEmail(sendSmtpEmail);
-      console.log('✅ Welcome email sent via Brevo API');
-      return { success: true };
-    } else {
-      console.log('📧 WELCOME FALLBACK - Would send to:', email);
-      return { success: true, fallback: true };
-    }
-  } catch (error) {
-    console.error('❌ Welcome email error:', error.message);
-    return { success: false, error: error.message };
-  }
-};
-
-
-
-
 
 // ═══════════════════════════════════════════
-// ✅ Compliance Reminder Email
+// ✅ 1. Compliance Reminder Email (Jo aapko chahiye)
 // ═══════════════════════════════════════════
 const sendComplianceReminderEmail = async ({ to, name, complianceName, dueDate, daysLeft, period, notes }) => {
-  console.log('📧 Compliance reminder to:', to);
-  try {
-    if (apiInstance) {
-      const sendSmtpEmail = new Brevo.SendSmtpEmail();
-      sendSmtpEmail.subject = `⏰ Reminder: ${complianceName} due in ${daysLeft} day(s)`;
-      sendSmtpEmail.htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <body style="font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px;">
-          <div style="max-width: 500px; background: white; padding: 30px; border-radius: 10px; margin: 0 auto;">
-            <h1 style="color: #0D9488; text-align: center;">LegalVault</h1>
-            <h2>⏰ Compliance Reminder</h2>
-            <p>Hi ${name || 'Team'},</p>
-            <p><strong>${complianceName}</strong> ki due date <strong>${new Date(dueDate).toLocaleDateString('en-IN')}</strong> hai.</p>
-            <p>Sirf <strong>${daysLeft} din</strong> bache hain!</p>
-            ${period ? `<p><strong>Period:</strong> ${period}</p>` : ''}
-            ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
-            <p style="color: #e11d48;">Please time par file kar dijiye taaki penalty na lage.</p>
-          </div>
-        </body>
-        </html>
-      `;
-      sendSmtpEmail.sender = {
-        name: 'LegalVault Compliance',
-        email: process.env.EMAIL_FROM || 'noreply@businezexcellence.com',
-      };
-      sendSmtpEmail.to = [{ email: to }];
-      await apiInstance.sendTransacEmail(sendSmtpEmail);
-      console.log('✅ Compliance email sent');
-      return { success: true };
-    }
-    console.log('📧 FALLBACK: Would send compliance email to', to);
-    return { success: true, fallback: true };
-  } catch (error) {
-    console.error('❌ Compliance email error:', error.message);
-    return { success: false, error: error.message };
-  }
+  console.log('📧 Sending compliance reminder to:', to);
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px;">
+      <div style="max-width: 500px; background: white; padding: 30px; border-radius: 10px; margin: 0 auto;">
+        <h1 style="color: #0D9488; text-align: center;">LegalVault</h1>
+        <h2>⏰ Compliance Reminder</h2>
+        <p>Hi ${name || 'Team'},</p>
+        <p><strong>${complianceName}</strong> ki due date <strong>${new Date(dueDate).toLocaleDateString('en-IN')}</strong> hai.</p>
+        <p style="color: #e11d48; font-size: 18px;">Sirf <strong>${daysLeft} din</strong> bache hain!</p>
+        ${period ? `<p><strong>Period:</strong> ${period}</p>` : ''}
+        ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
+        <p style="color: #e11d48;">Please time par file kar dijiye taaki penalty na lage.</p>
+      </div>
+    </body>
+    </html>
+  `;
+  return sendEmail({ to, subject: `⏰ Reminder: ${complianceName} due in ${daysLeft} day(s)`, htmlContent });
 };
 
-module.exports = { 
-  sendPasswordResetEmail,
-  sendUserWelcomeEmail ,
+// ═══════════════════════════════════════════
+// ✅ 2. Password Reset Email (Purana function, waise hi rahega)
+// ═══════════════════════════════════════════
+const sendPasswordResetEmail = async (email, resetToken) => {
+  const resetLink = `https://legalvault.businezexcellence.com/reset-password?token=${resetToken}`;
+  const htmlContent = `
+    <div style="max-width: 500px; background: white; padding: 30px; border-radius: 10px; margin: 0 auto;">
+      <h1 style="color: #0D9488; text-align: center;">LegalVault</h1>
+      <h2>Password Reset Request</h2>
+      <p>Click the button below to reset your password:</p>
+      <div style="text-align: center;">
+        <a href="${resetLink}" style="background: #0D9488; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a>
+      </div>
+      <p style="font-size: 12px; color: #888;">This link expires in 1 hour.</p>
+    </div>
+  `;
+  return sendEmail({ to: email, subject: '🔑 Password Reset - LegalVault', htmlContent });
+};
+
+// ═══════════════════════════════════════════
+// ✅ 3. Welcome Email (Purana function, waise hi rahega)
+// ═══════════════════════════════════════════
+const sendUserWelcomeEmail = async (email, name, password) => {
+  const htmlContent = `
+    <div style="max-width: 500px; background: white; padding: 30px; border-radius: 10px; margin: 0 auto;">
+      <h1 style="color: #0D9488; text-align: center;">🎉 LegalVault</h1>
+      <h2>Welcome ${name || 'User'}!</h2>
+      <p>Your account has been created successfully.</p>
+      <div style="background: #f0f0f0; padding: 15px; border-radius: 5px; margin: 15px 0;">
+        <p><strong>Email:</strong> ${email}</p>
+        <p><strong>Password:</strong> ${password}</p>
+      </div>
+    </div>
+  `;
+  return sendEmail({ to: email, subject: '🎉 Welcome to LegalVault!', htmlContent });
+};
+
+module.exports = {
   sendComplianceReminderEmail,
+  sendPasswordResetEmail,
+  sendUserWelcomeEmail,
 };
-
-
-
-
