@@ -4,59 +4,53 @@ const ComplianceSchema = new mongoose.Schema({
   clientId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Client',
-    required: false, // optional — apne internal team ke liye bhi use kar sakte ho
+    required: false, // Internal team ke liye optional
   },
   complianceType: {
     type: String,
     required: true,
     enum: ['GSTR-1', 'GSTR-3B', 'TDS', 'TCS', 'ITR', 'Advance Tax', 'GSTR-9', 'Custom'],
   },
-  customName: {
-    type: String,
-    default: '',
-    trim: true,
-  },
-  period: {
-    type: String,
-    default: '', // e.g. "Oct 2026", "Q2 FY26"
-  },
-  dueDate: {
-    type: Date,
-    required: true,
-    index: true,
-  },
-  // Kitne din pehle reminder bhejna hai (default 5)
-  reminderDays: {
-    type: Number,
-    default: 5,
-    min: 0,
-  },
-  // Channels
-  channels: {
-    email: { type: Boolean, default: true },
-    
-  },
-  // Recipients — team members
+  customName: { type: String, default: '', trim: true },
+  
+  // ✅ NAYA: Company Name (Email aur UI me dikhega)
+  companyName: { type: String, required: true, trim: true },
+
+  period: { type: String, default: '' },
+  dueDate: { type: Date, required: true, index: true },
+  reminderDays: { type: Number, default: 5, min: 0 },
+  
+  channels: { email: { type: Boolean, default: true } },
+  
   recipients: [{
     name: { type: String, required: true },
     email: { type: String, required: true },
   }],
+
+  // ✅ NAYA: Invoice/Attachment Link
+  attachmentUrl: { type: String, default: '' },
+
+  // ✅ NAYA: Kis user ko assign hai (Role-based access ke liye)
+  assignedTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+  },
+
   status: {
     type: String,
     enum: ['Pending', 'Filed', 'Overdue'],
     default: 'Pending',
   },
-  notes: {
-    type: String,
-    default: '',
-  },
-  // Reminder tracking — kis din bheja gaya
+  notes: { type: String, default: '' },
+
   sentReminders: [{
     sentAt: { type: Date, default: Date.now },
-    channels: [String], // ['email', 'whatsapp']
+    channels: [String],
     type: { type: String, enum: ['auto', 'manual'], default: 'auto' },
-    daysBefore: Number, // 5, 4, 3...
+    daysBefore: Number,
   }],
+
   isDeleted: { type: Boolean, default: false },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });

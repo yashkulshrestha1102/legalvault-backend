@@ -1,8 +1,14 @@
 const Compliance = require('../models/Compliance');
 const { sendComplianceReminderEmail } = require('../utils/email');
 
-// ✅ Naya sendReminderFor
+// ✅ Naya sendReminderFor (Auto-Stop logic added)
 const sendReminderFor = async (compliance, daysLeft, type = 'auto') => {
+  // ✅ Auto-Stop: Agar Filed ya Overdue hai, toh skip karo
+  if (compliance.status === 'Filed' || compliance.status === 'Overdue') {
+    console.log(`⏭️ Skipping: Status is ${compliance.status} for ${compliance.companyName}`);
+    return { email: [] };
+  }
+
   const results = { email: [] };
   const title = compliance.complianceType === 'Custom'
     ? compliance.customName
@@ -10,19 +16,22 @@ const sendReminderFor = async (compliance, daysLeft, type = 'auto') => {
 
   for (const r of compliance.recipients) {
     if (!r.email) continue;
+    
     const res = await sendComplianceReminderEmail({
       to: r.email,
       name: r.name,
       complianceName: title,
+      companyName: compliance.companyName, // ✅ Company Name pass kiya
       dueDate: compliance.dueDate,
       daysLeft,
       period: compliance.period,
       notes: compliance.notes,
+      attachmentUrl: compliance.attachmentUrl, // ✅ Attachment URL pass kiya
     });
     results.email.push({ to: r.email, ...res });
   }
 
-  // Log the reminder (sirf email)
+  // Log the reminder
   if (results.email.some(r => r.success)) {
     compliance.sentReminders.push({
       sentAt: new Date(),
@@ -41,6 +50,8 @@ const sendReminderFor = async (compliance, daysLeft, type = 'auto') => {
 exports.getCompliances = async (req, res) => {
   try {
     const { clientId, from, to } = req.query;
+    const user = req.user; // Auth middleware se aata hai
+    
     const filter = { isDeleted: false };
     if (clientId) filter.clientId = clientId;
     if (from || to) {
@@ -48,9 +59,17 @@ exports.getCompliances = async (req, res) => {
       if (from) filter.dueDate.$gte = new Date(from);
       if (to) filter.dueDate.$lte = new Date(to);
     }
+
+    // ✅ Role-Based Access: Agar admin nahi hai, toh sirf apni assigned dekhe
+    if (user.role !== 'admin') {
+      filter.assignedTo = user.id;
+    }
+
     const list = await Compliance.find(filter)
       .populate('clientId', 'name company')
+      .populate('assignedTo', 'name email')
       .sort({ dueDate: 1 });
+      
     res.json(list);
   } catch (err) {
     console.error('❌ getCompliances:', err);
@@ -108,6 +127,12 @@ exports.sendManualReminder = async (req, res) => {
     if (!doc || doc.isDeleted) {
       return res.status(404).json({ message: 'Not found' });
     }
+    
+    // ✅ Auto-Stop manual me bhi lagega
+    if (doc.status === 'Filed' || doc.status === 'Overdue') {
+      return res.status(400).json({ message: `Cannot send reminder. Status is ${doc.status}.` });
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const due = new Date(doc.dueDate);
@@ -131,13 +156,13 @@ exports.runDailyReminders = async () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Due date range: aaj se 30 din tak (safety)
     const future = new Date(today);
     future.setDate(future.getDate() + 30);
 
+    // ✅ Auto-Stop: Sirf Pending walo ko check karega
     const list = await Compliance.find({
       isDeleted: false,
-      status: 'Pending',
+      status: 'Pending', 
       dueDate: { $gte: today, $lte: future },
     });
 
@@ -147,11 +172,8 @@ exports.runDailyReminders = async () => {
       due.setHours(0, 0, 0, 0);
       const daysLeft = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
 
-      // ✅ Rule: reminderDays se lekar 0 din tak HAR DIN bhejna
-      // (5,4,3,2,1,0) — aap chahe to 1 din pehle band kar sakte ho
       if (daysLeft < 0 || daysLeft > c.reminderDays) continue;
 
-      // Aaj ke liye already bheja? Duplicate rok
       const alreadySentToday = (c.sentReminders || []).some(r => {
         const d = new Date(r.sentAt);
         d.setHours(0, 0, 0, 0);

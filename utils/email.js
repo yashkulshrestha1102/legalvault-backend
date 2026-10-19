@@ -1,22 +1,20 @@
 const { Resend } = require('resend');
 
-// ✅ Resend instance initialize karo
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// ✅ Core function: Email bhejne ke liye
-const sendEmail = async ({ to, subject, htmlContent }) => {
+const sendEmail = async ({ to, subject, htmlContent, attachments = [] }) => {
   if (!process.env.RESEND_API_KEY) {
     console.log('⚠️ RESEND_API_KEY not set — Email fallback mode');
-    console.log(`📧 To: ${to} | Subject: ${subject}`);
     return { success: true, fallback: true };
   }
 
   try {
     const { data, error } = await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'onboarding@resend.dev', // Resend ka default test email
+      from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
       to: [to],
       subject: subject,
       html: htmlContent,
+      attachments: attachments, // ✅ NAYA: Resend attachment support karta hai
     });
 
     if (error) {
@@ -33,10 +31,13 @@ const sendEmail = async ({ to, subject, htmlContent }) => {
 };
 
 // ═══════════════════════════════════════════
-// ✅ 1. Compliance Reminder Email (Jo aapko chahiye)
+// ✅ 1. Compliance Reminder Email
 // ═══════════════════════════════════════════
-const sendComplianceReminderEmail = async ({ to, name, complianceName, dueDate, daysLeft, period, notes }) => {
+const sendComplianceReminderEmail = async ({ 
+  to, name, complianceName, companyName, dueDate, daysLeft, period, notes, attachmentUrl 
+}) => {
   console.log('📧 Sending compliance reminder to:', to);
+  
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -45,20 +46,36 @@ const sendComplianceReminderEmail = async ({ to, name, complianceName, dueDate, 
         <h1 style="color: #0D9488; text-align: center;">LegalVault</h1>
         <h2>⏰ Compliance Reminder</h2>
         <p>Hi ${name || 'Team'},</p>
+        
+        <!-- ✅ Company Name Add kiya -->
+        <p><strong>Company:</strong> ${companyName || 'N/A'}</p>
+        
         <p><strong>${complianceName}</strong> ki due date <strong>${new Date(dueDate).toLocaleDateString('en-IN')}</strong> hai.</p>
         <p style="color: #e11d48; font-size: 18px;">Sirf <strong>${daysLeft} din</strong> bache hain!</p>
         ${period ? `<p><strong>Period:</strong> ${period}</p>` : ''}
         ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
+        
+        ${attachmentUrl ? `<p><strong>📄 Attachment:</strong> <a href="${attachmentUrl}">Click here to view</a></p>` : ''}
+        
         <p style="color: #e11d48;">Please time par file kar dijiye taaki penalty na lage.</p>
       </div>
     </body>
     </html>
   `;
-  return sendEmail({ to, subject: `⏰ Reminder: ${complianceName} due in ${daysLeft} day(s)`, htmlContent });
+
+  // ✅ Attachment handle karna
+  const attachments = attachmentUrl ? [{ path: attachmentUrl }] : [];
+
+  return sendEmail({ 
+    to, 
+    subject: `⏰ Reminder: ${complianceName} for ${companyName || 'Company'} due in ${daysLeft} day(s)`, 
+    htmlContent,
+    attachments 
+  });
 };
 
 // ═══════════════════════════════════════════
-// ✅ 2. Password Reset Email (Purana function, waise hi rahega)
+// ✅ 2. Password Reset Email
 // ═══════════════════════════════════════════
 const sendPasswordResetEmail = async (email, resetToken) => {
   const resetLink = `https://legalvault.businezexcellence.com/reset-password?token=${resetToken}`;
@@ -77,7 +94,7 @@ const sendPasswordResetEmail = async (email, resetToken) => {
 };
 
 // ═══════════════════════════════════════════
-// ✅ 3. Welcome Email (Purana function, waise hi rahega)
+// ✅ 3. Welcome Email
 // ═══════════════════════════════════════════
 const sendUserWelcomeEmail = async (email, name, password) => {
   const htmlContent = `
