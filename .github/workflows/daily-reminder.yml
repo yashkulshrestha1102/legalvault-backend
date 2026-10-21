@@ -1,0 +1,28 @@
+name: Daily Compliance Reminder
+
+on:
+  schedule:
+    # Ye roz subah 9:00 AM IST (3:30 AM UTC) pe chalega
+    # Render UTC use karta hai, isliye IST ko UTC mein convert karna padta hai
+    - cron: '30 3 * * *'
+  workflow_dispatch: # Manual test karne ke liye
+
+jobs:
+  trigger-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Daily Reminders API
+        run: |
+          echo "⏰ Triggering reminders at $(date)"
+          
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://legalvault-backend.onrender.com/api/compliance/trigger-cron-secret?key=LegalVault_Super_Secret_123")
+          
+          echo "✅ Response Code: $RESPONSE"
+          
+          if [ "$RESPONSE" = "200" ]; then
+            echo "🎉 Reminders triggered successfully!"
+          else
+            echo "⚠️ Failed to trigger. Check backend logs."
+            exit 1
+          fi

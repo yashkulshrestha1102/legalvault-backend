@@ -34,4 +34,27 @@ router.post('/run-daily', async (req, res) => {
   }
 });
 
+
+
+// routes/complianceRoutes.js
+
+// ... existing imports ...
+
+// ✅ Naya route: GitHub Actions se trigger karne ke liye
+router.get('/trigger-cron-secret', async (req, res) => {
+  // Secret key check karo (ise .env mein daal dena)
+  if (req.query.key !== process.env.CRON_SECRET_KEY) {
+    return res.status(403).json({ message: 'Unauthorized' });
+  }
+
+  try {
+    console.log('⏰ External Cron Trigger received from GitHub Actions');
+    const count = await runDailyReminders();
+    res.json({ success: true, message: `Triggered ${count} reminders` });
+  } catch (err) {
+    console.error('❌ Cron trigger error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
