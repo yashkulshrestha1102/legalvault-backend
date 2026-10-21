@@ -31,12 +31,12 @@ const sendEmail = async ({ to, subject, htmlContent, attachments = [] }) => {
 };
 
 // ═══════════════════════════════════════════
-// ✅ 1. Compliance Reminder Email
+// ✅ 1. Compliance Reminder Email (Multiple Attachments Fixed)
 // ═══════════════════════════════════════════
 const sendComplianceReminderEmail = async ({ 
-  to, name, complianceName, companyName, dueDate, daysLeft, period, notes, attachmentUrl 
+  to, name, complianceName, companyName, dueDate, daysLeft, period, notes, attachmentUrls = [] 
 }) => {
-  console.log('📧 Sending compliance reminder to:', to);
+  console.log(`📧 Sending compliance reminder to: ${to} (with ${attachmentUrls.length} attachments)`);
   
   const htmlContent = `
     <!DOCTYPE html>
@@ -47,7 +47,6 @@ const sendComplianceReminderEmail = async ({
         <h2>⏰ Compliance Reminder</h2>
         <p>Hi ${name || 'Team'},</p>
         
-        <!-- ✅ Company Name Add kiya -->
         <p><strong>Company:</strong> ${companyName || 'N/A'}</p>
         
         <p><strong>${complianceName}</strong> ki due date <strong>${new Date(dueDate).toLocaleDateString('en-IN')}</strong> hai.</p>
@@ -55,7 +54,7 @@ const sendComplianceReminderEmail = async ({
         ${period ? `<p><strong>Period:</strong> ${period}</p>` : ''}
         ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
         
-        ${attachmentUrl ? `<p><strong>📄 Attachment:</strong> <a href="${attachmentUrl}">Click here to view</a></p>` : ''}
+        ${attachmentUrls.length > 0 ? `<p><strong>📄 Total Attachments:</strong> ${attachmentUrls.length} file(s) attached with this email.</p>` : ''}
         
         <p style="color: #e11d48;">Please time par file kar dijiye taaki penalty na lage.</p>
       </div>
@@ -63,14 +62,37 @@ const sendComplianceReminderEmail = async ({
     </html>
   `;
 
-  // ✅ Attachment handle karna
-  const attachments = attachmentUrl ? [{ path: attachmentUrl }] : [];
+  // ✅ NAYA: URL se Buffer banane ka logic (R2/GridFS ke liye)
+  let finalAttachments = [];
+  try {
+    finalAttachments = await Promise.all(
+      attachmentUrls.map(async (url) => {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Failed to fetch ${url}`);
+        
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        
+        // File ka naam URL se nikalna
+        let filename = url.split('/').pop().split('?')[0];
+        if (!filename || filename.length > 50) filename = 'Invoice_Attachment';
+
+        return {
+          filename: filename,
+          content: buffer
+        };
+      })
+    );
+  } catch (attachErr) {
+    console.error('⚠️ Error fetching attachments for email:', attachErr.message);
+    // Agar attachment download fail ho jaye, toh email bina attachment ke chali jaye (fail na ho)
+  }
 
   return sendEmail({ 
     to, 
     subject: `⏰ Reminder: ${complianceName} for ${companyName || 'Company'} due in ${daysLeft} day(s)`, 
     htmlContent,
-    attachments 
+    attachments: finalAttachments
   });
 };
 

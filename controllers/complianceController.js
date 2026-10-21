@@ -1,7 +1,7 @@
 const Compliance = require('../models/Compliance');
 const { sendComplianceReminderEmail } = require('../utils/email');
 
-// ✅ Naya sendReminderFor (Auto-Stop logic added)
+// ✅ Naya sendReminderFor (Auto-Stop + Multiple Attachments logic added)
 const sendReminderFor = async (compliance, daysLeft, type = 'auto') => {
   // ✅ Auto-Stop: Agar Filed ya Overdue hai, toh skip karo
   if (compliance.status === 'Filed' || compliance.status === 'Overdue') {
@@ -32,9 +32,8 @@ const sendReminderFor = async (compliance, daysLeft, type = 'auto') => {
       daysLeft,
       period: compliance.period,
       notes: compliance.notes,
-      // ✅ Email me pehli file ka direct link jayega, aur baaki files ka count
-      attachmentUrl: allFiles.length > 0 ? allFiles[0] : null,
-      totalFiles: allFiles.length, 
+      // ✅ YAHAN CHANGE HAI: Ab array pass kar rahe hain (saari files)
+      attachmentUrls: allFiles, 
     });
     results.email.push({ to: r.email, ...res });
   }
