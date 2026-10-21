@@ -31,11 +31,10 @@ const ComplianceSchema = new mongoose.Schema({
   attachmentUrl: { type: String, default: '' },
 
   // ✅ NAYA: Kis user ko assign hai (Role-based access ke liye)
-  assignedTo: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    default: null,
-  },
+ assignedTo: [{
+  type: mongoose.Schema.Types.ObjectId,
+  ref: 'User',
+}],
 
   status: {
     type: String,
