@@ -9,17 +9,14 @@ const { sendUserWelcomeEmail } = require('../utils/email');
 const mongoose = require('mongoose');
 const auditLog = require('../middleware/audit');
 
-
 console.log('✅ userRoutes.js loaded - Production Fix');
 
-// ✅ 9 Folders including Client Repository
 const ALLOWED_FOLDERS = [
   'registrations', 'contracts', 'policies', 'corporate-secretariat',
   'hr', 'gst', 'income-tax', 'financials',
-  'documents','client-folder' 
+  'documents', 'client-folder'
 ];
 
-// ✅ Validation Rules
 const validateUser = [
   body('name').notEmpty().withMessage('Name is required'),
   body('email').isEmail().withMessage('Valid email is required'),
@@ -53,10 +50,10 @@ const handleValidation = (req, res, next) => {
   next();
 };
 
-// GET - All users (Admin only)
+// GET - All users (Admin only) — exclude deleted
 router.get('/', [auth, admin], async (req, res) => {
   try {
-    const users = await User.find().select('-password');
+    const users = await User.find({ isDeleted: false }).select('-password');
     res.json(users);
   } catch (error) {
     console.error('❌ GET users error:', error);
@@ -64,14 +61,13 @@ router.get('/', [auth, admin], async (req, res) => {
   }
 });
 
-// POST - Create user (Admin only) - WITH EMAIL & NOTIFICATION
-router.post('/', [auth, admin,auditLog], validateUser, handleValidation, async (req, res) => {
+// ✅ POST - Create user (Admin only) — FIXED: revive deleted user
+router.post('/', [auth, admin, auditLog], validateUser, handleValidation, async (req, res) => {
   try {
     console.log('📥 POST /api/users - Request body:', JSON.stringify(req.body, null, 2));
 
     const { name, email, password, department, role, status, phone, folderPermissions } = req.body;
     
-    // ✅ Password validation
     if (!password) {
       return res.status(400).json({ message: 'Password is required' });
     }
@@ -79,15 +75,23 @@ router.post('/', [auth, admin,auditLog], validateUser, handleValidation, async (
       return res.status(400).json({ message: 'Password must be at least 6 characters' });
     }
 
-    // ✅ Check existing user (case insensitive)
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
-    if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // ✅ STEP 1: Check ACTIVE user with same email
+    const activeUser = await User.findOne({ 
+      email: normalizedEmail, 
+      isDeleted: false 
+    });
+    if (activeUser) {
+      console.log('❌ Active user already exists:', normalizedEmail);
+      return res.status(400).json({ message: 'User with this email already exists' });
     }
 
-    // ✅ Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    // ✅ STEP 2: Check if a DELETED user exists with same email
+    const deletedUser = await User.findOne({ 
+      email: normalizedEmail, 
+      isDeleted: true 
+    });
 
     // ✅ Validate folder permissions
     let validPermissions = [];
@@ -99,27 +103,46 @@ router.post('/', [auth, admin,auditLog], validateUser, handleValidation, async (
 
     const normalizedRole = role ? role.toLowerCase() : 'user';
 
-    // ✅ Create user
-    const user = new User({
-      name,
-      email: email.toLowerCase(),
-      password: hashedPassword,
-      department: department || 'General',
-      role: normalizedRole,
-      status: status || 'Active',
-      phone: phone || '',
-      folderPermissions: validPermissions
-    });
+    // ✅ Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    // ✅ ONLY ONE save
-    await user.save();
-    console.log('✅ User saved:', user.email);
-    
-    // ✅ SEND WELCOME EMAIL (Don't block user creation)
+    let user;
+
+    if (deletedUser) {
+      // ✅ REVIVE deleted user — naya document nahi banao
+      console.log('♻️ Reviving deleted user:', normalizedEmail);
+      deletedUser.name = name;
+      deletedUser.password = hashedPassword;
+      deletedUser.department = department || 'General';
+      deletedUser.role = normalizedRole;
+      deletedUser.status = status || 'Active';
+      deletedUser.phone = phone || '';
+      deletedUser.folderPermissions = validPermissions;
+      deletedUser.isDeleted = false;
+      await deletedUser.save();
+      user = deletedUser;
+      console.log('✅ Deleted user revived:', user.email);
+    } else {
+      // ✅ CREATE new user
+      user = new User({
+        name,
+        email: normalizedEmail,
+        password: hashedPassword,
+        department: department || 'General',
+        role: normalizedRole,
+        status: status || 'Active',
+        phone: phone || '',
+        folderPermissions: validPermissions
+      });
+      await user.save();
+      console.log('✅ New user created:', user.email);
+    }
+
+    // ✅ Send welcome email (non-blocking)
     try {
-      console.log('📧 Attempting to send welcome email to:', email);
-      await sendUserWelcomeEmail(email, name, password);
-      console.log('✅ Welcome email sent to:', email);
+      await sendUserWelcomeEmail(normalizedEmail, name, password);
+      console.log('✅ Welcome email sent to:', normalizedEmail);
     } catch (emailError) {
       console.error('❌ Failed to send welcome email:', emailError.message);
     }
@@ -128,17 +151,27 @@ router.post('/', [auth, admin,auditLog], validateUser, handleValidation, async (
     delete userResponse.password;
     
     res.status(201).json({ 
-      message: 'User created successfully', 
+      message: deletedUser 
+        ? 'User re-activated successfully' 
+        : 'User created successfully', 
       user: userResponse 
     });
   } catch (error) {
     console.error('❌ POST error:', error);
+    
+    // ✅ Handle MongoDB duplicate key error gracefully
+    if (error.code === 11000) {
+      return res.status(400).json({ 
+        message: 'Email already exists. Please try a different email or delete the existing user first.' 
+      });
+    }
+    
     res.status(500).json({ message: error.message });
   }
 });
 
-// ✅ PUT - Update user
-router.put('/:id', auth,auditLog, validateUser, handleValidation, async (req, res) => {
+// ✅ PUT - Update user (unchanged mostly)
+router.put('/:id', auth, auditLog, validateUser, handleValidation, async (req, res) => {
   try {
     const { name, email, department, role, status, phone, folderPermissions, password } = req.body;
     
@@ -160,7 +193,18 @@ router.put('/:id', auth,auditLog, validateUser, handleValidation, async (req, re
 
     if (req.user.role === 'admin') {
       if (role) updateData.role = role.toLowerCase();
-      if (email) updateData.email = email.toLowerCase();
+      if (email) {
+        // ✅ Check if new email is already used by another ACTIVE user
+        const emailTaken = await User.findOne({
+          email: email.toLowerCase().trim(),
+          isDeleted: false,
+          _id: { $ne: req.params.id }
+        });
+        if (emailTaken) {
+          return res.status(400).json({ message: 'Email already used by another user' });
+        }
+        updateData.email = email.toLowerCase().trim();
+      }
       if (folderPermissions) {
         updateData.folderPermissions = folderPermissions
           .filter(f => typeof f === 'string')
@@ -185,11 +229,14 @@ router.put('/:id', auth,auditLog, validateUser, handleValidation, async (req, re
     res.json(updatedUser);
   } catch (error) {
     console.error('❌ PUT error:', error);
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'Email already exists' });
+    }
     res.status(500).json({ message: error.message });
   }
 });
 
-// ✅ DELETE - Delete user with ObjectId validation
+// ✅ DELETE - Soft delete (admin only) — taaki email dobara use ho sake
 router.delete('/:id', [auth, admin, auditLog], async (req, res) => {
   try {
     const { id } = req.params;
@@ -199,16 +246,19 @@ router.delete('/:id', [auth, admin, auditLog], async (req, res) => {
     }
     
     const user = await User.findById(id);
-    if (!user) {
+    if (!user || user.isDeleted) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const adminCount = await User.countDocuments({ role: 'admin' });
+    const adminCount = await User.countDocuments({ role: 'admin', isDeleted: false });
     if (user.role === 'admin' && adminCount <= 1) {
       return res.status(400).json({ message: 'Cannot delete the last admin user' });
     }
 
-    await User.findByIdAndDelete(id);
+    // ✅ SOFT DELETE — email ko free kar do future use ke liye
+    user.isDeleted = true;
+    await user.save();
+
     res.json({ message: 'User deleted successfully' });
   } catch (error) {
     console.error('❌ DELETE error:', error);
@@ -216,10 +266,7 @@ router.delete('/:id', [auth, admin, auditLog], async (req, res) => {
   }
 });
 
-
-// routes/userRoutes.js
-
-// GET - All users for dropdown (Admin & Normal users dono ke liye)
+// GET - All users for dropdown
 router.get('/dropdown/all', auth, async (req, res) => {
   try {
     const users = await User.find({ isDeleted: false }).select('name email role _id');

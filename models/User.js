@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 
 const UserSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
+  // ✅ unique hata diya yahan se
+  email: { type: String, required: true },
   password: { type: String, required: true },
   role: { type: String, default: 'user' },
   department: { type: String, default: 'General' },
@@ -22,7 +23,18 @@ const UserSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// ✅ Sirf indexes (Email already unique)
+// ✅ Partial unique index — sirf active users ke liye
+// isDeleted: true wale users ka email dobara use ho sakta hai
+UserSchema.index(
+  { email: 1 },
+  { 
+    unique: true, 
+    partialFilterExpression: { isDeleted: false },
+    name: 'email_active_unique'
+  }
+);
+
+// ✅ Baaki indexes
 UserSchema.index({ role: 1 });
 UserSchema.index({ status: 1 });
 UserSchema.index({ isDeleted: 1 });

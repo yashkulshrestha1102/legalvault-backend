@@ -24,7 +24,9 @@ const getCookieOptions = () => {
   };
 };
 
-// ✅ Register
+// ═══════════════════════════════════════════
+// ✅ Register — FIXED: Revive soft-deleted users
+// ═══════════════════════════════════════════
 exports.register = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
@@ -46,15 +48,38 @@ exports.register = async (req, res) => {
     const sanitizedName = sanitizeString(name);
     const sanitizedEmail = sanitizeString(email).toLowerCase();
 
-    const existingUser = await User.findOne({ email: sanitizedEmail });
-    if (existingUser) {
-      console.log('❌ User already exists:', sanitizedEmail);
+    // ✅ Check ACTIVE user only
+    const existingActive = await User.findOne({
+      email: sanitizedEmail,
+      isDeleted: false
+    });
+    if (existingActive) {
+      console.log('❌ Active user already exists:', sanitizedEmail);
       return res.status(400).json({ message: 'User already exists' });
     }
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    // ✅ Check if a soft-deleted user exists with same email — revive
+    const deletedUser = await User.findOne({
+      email: sanitizedEmail,
+      isDeleted: true
+    });
+
+    if (deletedUser) {
+      console.log('♻️ Reviving deleted user:', sanitizedEmail);
+      deletedUser.name = sanitizedName;
+      deletedUser.password = hashedPassword;
+      deletedUser.role = role || 'user';
+      deletedUser.status = 'Active';
+      deletedUser.isDeleted = false;
+      await deletedUser.save();
+      console.log('✅ Deleted user revived:', sanitizedEmail);
+      return res.status(201).json({ message: 'User registered successfully' });
+    }
+
+    // ✅ Create new user
     const user = new User({
       name: sanitizedName,
       email: sanitizedEmail,
@@ -67,11 +92,19 @@ exports.register = async (req, res) => {
     res.status(201).json({ message: 'User registered successfully' });
   } catch (error) {
     console.error('❌ Register error:', error);
+
+    // ✅ Handle MongoDB duplicate key error gracefully
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'Email already exists' });
+    }
+
     res.status(500).json({ message: error.message });
   }
 };
 
-// ✅ Login - FULLY FIXED for cross-domain cookies
+// ═══════════════════════════════════════════
+// ✅ Login — FIXED: Deleted users login nahi kar sakte
+// ═══════════════════════════════════════════
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -90,8 +123,11 @@ exports.login = async (req, res) => {
     // ✅ Sanitize email
     const sanitizedEmail = sanitizeString(email).toLowerCase();
 
-    // ✅ Find user
-    const user = await User.findOne({ email: sanitizedEmail });
+    // ✅ Find user — only active (not deleted)
+    const user = await User.findOne({
+      email: sanitizedEmail,
+      isDeleted: false
+    });
     console.log('👤 User found:', user ? 'Yes' : 'No');
 
     if (!user) {
@@ -104,9 +140,16 @@ exports.login = async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
+    // ✅ Inactive account check
+    if (user.status === 'Inactive') {
+      return res.status(403).json({
+        message: 'Account is inactive. Please contact administrator.'
+      });
+    }
+
     // ✅ Generate JWT
     const token = jwt.sign(
-      { id: user._id, email: user.email, role: user.role, name: user.name, },
+      { id: user._id, email: user.email, role: user.role, name: user.name },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -133,7 +176,9 @@ exports.login = async (req, res) => {
   }
 };
 
-// ✅ Logout - Clear HTTP-only cookie
+// ═══════════════════════════════════════════
+// ✅ Logout — Clear HTTP-only cookie
+// ═══════════════════════════════════════════
 exports.logout = async (req, res) => {
   try {
     // ✅ Same options use karo warna cookie clear nahi hogi
@@ -148,7 +193,9 @@ exports.logout = async (req, res) => {
   }
 };
 
-// ✅ Forgot Password - COMPLETE WORKING
+// ═══════════════════════════════════════════
+// ✅ Forgot Password — COMPLETE WORKING
+// ═══════════════════════════════════════════
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -164,7 +211,11 @@ exports.forgotPassword = async (req, res) => {
 
     const sanitizedEmail = sanitizeString(email).toLowerCase();
 
-    const user = await User.findOne({ email: sanitizedEmail });
+    // ✅ Only active users can reset password
+    const user = await User.findOne({
+      email: sanitizedEmail,
+      isDeleted: false
+    });
     if (!user) {
       console.log('❌ User not found:', sanitizedEmail);
       return res.status(404).json({ message: 'No account found with this email' });
@@ -206,7 +257,9 @@ exports.forgotPassword = async (req, res) => {
   }
 };
 
+// ═══════════════════════════════════════════
 // ✅ Reset Password
+// ═══════════════════════════════════════════
 exports.resetPassword = async (req, res) => {
   try {
     const { token, newPassword } = req.body;
@@ -220,10 +273,11 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({ message: 'Password must be at least 6 characters' });
     }
 
-    // ✅ Find user by token and check expiry
+    // ✅ Find user by token, check expiry, and only active (not deleted)
     const user = await User.findOne({
       resetPasswordToken: token,
-      resetPasswordExpires: { $gt: Date.now() }
+      resetPasswordExpires: { $gt: Date.now() },
+      isDeleted: false
     });
 
     if (!user) {
@@ -247,8 +301,6 @@ exports.resetPassword = async (req, res) => {
   }
 };
 
-
-
 // ═══════════════════════════════════════════
 // ✅ Get Current User — /api/auth/me
 // Returns fresh user data from database
@@ -263,14 +315,15 @@ exports.getMe = async (req, res) => {
     // ✅ Fresh data from DB — not from JWT
     const user = await User.findById(req.user.id).select('-password');
 
-    if (!user) {
+    // ✅ Deleted user check
+    if (!user || user.isDeleted) {
       return res.status(404).json({ message: 'User not found' });
     }
 
     // ✅ Inactive user check — security
     if (user.status === 'Inactive') {
-      return res.status(403).json({ 
-        message: 'Account is inactive. Please contact administrator.' 
+      return res.status(403).json({
+        message: 'Account is inactive. Please contact administrator.'
       });
     }
 
