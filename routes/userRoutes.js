@@ -216,4 +216,17 @@ router.delete('/:id', [auth, admin, auditLog], async (req, res) => {
   }
 });
 
+
+// routes/userRoutes.js
+
+// GET - All users for dropdown (Admin & Normal users dono ke liye)
+router.get('/dropdown/all', auth, async (req, res) => {
+  try {
+    const users = await User.find({ isDeleted: false }).select('name email role _id');
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;

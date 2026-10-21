@@ -17,6 +17,7 @@ router.post('/', createCompliance);
 router.put('/:id', updateCompliance);
 router.delete('/:id', deleteCompliance);
 router.post('/:id/send-now', sendManualReminder);
+router.get('/companies', getUniqueCompanies);
 
 // ✅ Manual trigger for whole daily job (testing ke liye)
 router.post('/run-daily', async (req, res) => {

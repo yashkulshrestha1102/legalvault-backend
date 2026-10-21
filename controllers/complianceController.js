@@ -192,3 +192,21 @@ exports.runDailyReminders = async () => {
     throw err;
   }
 };
+
+
+
+
+// controllers/complianceController.js
+
+// ✅ NAYA: Unique company names fetch karne ke liye
+exports.getUniqueCompanies = async (req, res) => {
+  try {
+    const companies = await Compliance.distinct('companyName', { isDeleted: false });
+    res.json(companies);
+  } catch (err) {
+    console.error('❌ getUniqueCompanies:', err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
