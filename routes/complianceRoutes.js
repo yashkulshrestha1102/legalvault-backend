@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
+
+// ✅ Yahan getUniqueCompanies add karo import mein
 const {
   getCompliances,
   createCompliance,
@@ -8,6 +10,7 @@ const {
   deleteCompliance,
   sendManualReminder,
   runDailyReminders,
+  getUniqueCompanies, // <--- YEH ADD KARO
 } = require('../controllers/complianceController');
 
 router.use(auth);
@@ -17,6 +20,8 @@ router.post('/', createCompliance);
 router.put('/:id', updateCompliance);
 router.delete('/:id', deleteCompliance);
 router.post('/:id/send-now', sendManualReminder);
+
+// ✅ Companies route
 router.get('/companies', getUniqueCompanies);
 
 // ✅ Manual trigger for whole daily job (testing ke liye)
