@@ -29,6 +29,7 @@ const ComplianceSchema = new mongoose.Schema({
 
   // ✅ NAYA: Invoice/Attachment Link
   attachmentUrl: { type: String, default: '' },
+  attachmentUrls: { type: [String], default: [] },
 
   // ✅ NAYA: Kis user ko assign hai (Role-based access ke liye)
  assignedTo: [{

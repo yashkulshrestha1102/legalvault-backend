@@ -14,6 +14,12 @@ const sendReminderFor = async (compliance, daysLeft, type = 'auto') => {
     ? compliance.customName
     : compliance.complianceType;
 
+  // ✅ Multiple Files Handle Karne Ka Logic
+  // Purana single attachment + Naya multiple attachmentUrls dono check karega
+  const allFiles = compliance.attachmentUrls?.length > 0 
+    ? compliance.attachmentUrls 
+    : (compliance.attachmentUrl ? [compliance.attachmentUrl] : []);
+
   for (const r of compliance.recipients) {
     if (!r.email) continue;
     
@@ -21,12 +27,14 @@ const sendReminderFor = async (compliance, daysLeft, type = 'auto') => {
       to: r.email,
       name: r.name,
       complianceName: title,
-      companyName: compliance.companyName, // ✅ Company Name pass kiya
+      companyName: compliance.companyName,
       dueDate: compliance.dueDate,
       daysLeft,
       period: compliance.period,
       notes: compliance.notes,
-      attachmentUrl: compliance.attachmentUrl, // ✅ Attachment URL pass kiya
+      // ✅ Email me pehli file ka direct link jayega, aur baaki files ka count
+      attachmentUrl: allFiles.length > 0 ? allFiles[0] : null,
+      totalFiles: allFiles.length, 
     });
     results.email.push({ to: r.email, ...res });
   }
@@ -80,6 +88,12 @@ exports.getCompliances = async (req, res) => {
 exports.createCompliance = async (req, res) => {
   try {
     const data = { ...req.body, createdBy: req.user?.id };
+    
+    // ✅ NAYA: Array ko clean karo taaki koi empty string save na ho
+    if (data.attachmentUrls && Array.isArray(data.attachmentUrls)) {
+      data.attachmentUrls = data.attachmentUrls.filter(u => u && u.trim() !== '');
+    }
+
     const doc = new Compliance(data);
     await doc.save();
     res.status(201).json(doc);
@@ -91,9 +105,16 @@ exports.createCompliance = async (req, res) => {
 
 exports.updateCompliance = async (req, res) => {
   try {
+    const updateData = { ...req.body };
+    
+    // ✅ NAYA: Array ko clean karo
+    if (updateData.attachmentUrls && Array.isArray(updateData.attachmentUrls)) {
+      updateData.attachmentUrls = updateData.attachmentUrls.filter(u => u && u.trim() !== '');
+    }
+
     const doc = await Compliance.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      updateData,
       { new: true, runValidators: true }
     );
     if (!doc) return res.status(404).json({ message: 'Not found' });
@@ -193,12 +214,9 @@ exports.runDailyReminders = async () => {
   }
 };
 
-
-
-
-// controllers/complianceController.js
-
+// ═══════════════════════════════════════════
 // ✅ NAYA: Unique company names fetch karne ke liye
+// ═══════════════════════════════════════════
 exports.getUniqueCompanies = async (req, res) => {
   try {
     const companies = await Compliance.distinct('companyName', { isDeleted: false });
@@ -208,5 +226,3 @@ exports.getUniqueCompanies = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
-
