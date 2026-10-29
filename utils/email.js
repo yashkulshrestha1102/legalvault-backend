@@ -31,10 +31,10 @@ const sendEmail = async ({ to, subject, htmlContent, attachments = [] }) => {
 };
 
 // ═══════════════════════════════════════════
-// ✅ 1. Compliance Reminder Email (Professional Redesign)
+// ✅ 1. Compliance Reminder Email (Professional Redesign + Confirm Button)
 // ═══════════════════════════════════════════
 const sendComplianceReminderEmail = async ({ 
-  to, name, complianceName, companyName, dueDate, daysLeft, period, notes, attachmentUrls = [] 
+  to, name, complianceName, companyName, dueDate, daysLeft, period, notes, attachmentUrls = [], complianceId 
 }) => {
   console.log(`📧 Sending compliance reminder to: ${to} (with ${attachmentUrls.length} attachments)`);
   
@@ -42,6 +42,10 @@ const sendComplianceReminderEmail = async ({
   const formattedDate = new Date(dueDate).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
   });
+
+  // ✅ Frontend URL setup for Confirm Button
+  const FRONTEND_URL = process.env.FRONTEND_URL || 'https://legalvault-frontend-two.vercel.app';
+  const confirmUrl = `${FRONTEND_URL}/confirm-filing/${complianceId}`;
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -71,6 +75,11 @@ const sendComplianceReminderEmail = async ({
         .detail-label { width: 160px; color: #64748b; font-weight: 500; }
         .detail-value { flex: 1; font-weight: 600; color: #0f172a; }
         
+        /* Confirm Button */
+        .btn-container { text-align: center; margin: 30px 0; }
+        .btn-confirm { background-color: #0d9488; color: #ffffff !important; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(13, 148, 136, 0.2); transition: background-color 0.3s; }
+        .btn-confirm:hover { background-color: #0f766e; }
+
         /* Footer Callout */
         .footer-callout { background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 16px; margin-top: 24px; display: flex; align-items: flex-start; }
         .check-icon { color: #16a34a; font-size: 20px; margin-right: 12px; margin-top: 2px; }
@@ -114,6 +123,13 @@ const sendComplianceReminderEmail = async ({
               <div class="detail-label">Due Date</div>
               <div class="detail-value">: &nbsp; ${formattedDate}</div>
             </div>
+          </div>
+
+          <!-- ✅ Confirm Filing Button -->
+          <div class="btn-container">
+            <p style="margin-bottom: 12px; font-weight: bold; color: #334155;">Already completed the filing?</p>
+            <a href="${confirmUrl}" class="btn-confirm" target="_blank">Confirm Filing</a>
+            <p style="font-size: 12px; color: #64748b; margin-top: 12px;">Click the button above to stop receiving reminders for this compliance.</p>
           </div>
 
           <!-- Already Filed Note -->
@@ -165,7 +181,6 @@ const sendComplianceReminderEmail = async ({
     attachments: finalAttachments
   });
 };
-
 // ═══════════════════════════════════════════
 // ✅ 2. Password Reset Email
 // ═══════════════════════════════════════════

@@ -10,6 +10,7 @@ const {
   sendManualReminder,
   runDailyReminders,
   getUniqueCompanies,
+  confirmFilingFromEmail, // ✅ Import kiya
 } = require('../controllers/complianceController');
 
 // ✅ YEH ROUTE SABSE PEHLE HONA CHAHIYE (auth ke pehle)
@@ -17,7 +18,6 @@ router.get('/trigger-cron-secret', async (req, res) => {
   if (req.query.key !== process.env.CRON_SECRET_KEY) {
     return res.status(403).json({ message: 'Unauthorized' });
   }
-
   try {
     console.log('⏰ External Cron Trigger received from GitHub Actions');
     const count = await runDailyReminders();
@@ -27,6 +27,9 @@ router.get('/trigger-cron-secret', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ✅ NAYA: Email button click (Public route, auth ke pehle)
+router.get('/confirm-filing/:id', confirmFilingFromEmail);
 
 // 🚨 Ab yahan se neeche auth lagega
 router.use(auth);

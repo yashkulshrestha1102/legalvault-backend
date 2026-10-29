@@ -1,11 +1,11 @@
 const Compliance = require('../models/Compliance');
 const { sendComplianceReminderEmail } = require('../utils/email');
 
-// ✅ Naya sendReminderFor (Auto-Stop + Multiple Attachments logic added)
+// ✅ Naya sendReminderFor (Passing complianceId)
 const sendReminderFor = async (compliance, daysLeft, type = 'auto') => {
-  // ✅ Auto-Stop: Agar Filed ya Overdue hai, toh skip karo
-  if (compliance.status === 'Filed' || compliance.status === 'Overdue') {
-    console.log(`⏭️ Skipping: Status is ${compliance.status} for ${compliance.companyName}`);
+  // Auto-Stop: Agar manually 'Filed' mark ho chuka hai, toh skip karo
+  if (compliance.status === 'Filed') {
+    console.log(`⏭️ Skipping: Status is Filed for ${compliance.companyName}`);
     return { email: [] };
   }
 
@@ -14,8 +14,6 @@ const sendReminderFor = async (compliance, daysLeft, type = 'auto') => {
     ? compliance.customName
     : compliance.complianceType;
 
-  // ✅ Multiple Files Handle Karne Ka Logic
-  // Purana single attachment + Naya multiple attachmentUrls dono check karega
   const allFiles = compliance.attachmentUrls?.length > 0 
     ? compliance.attachmentUrls 
     : (compliance.attachmentUrl ? [compliance.attachmentUrl] : []);
@@ -32,13 +30,12 @@ const sendReminderFor = async (compliance, daysLeft, type = 'auto') => {
       daysLeft,
       period: compliance.period,
       notes: compliance.notes,
-      // ✅ YAHAN CHANGE HAI: Ab array pass kar rahe hain (saari files)
       attachmentUrls: allFiles, 
+      complianceId: compliance._id.toString() // ✅ PASSED ID FOR BUTTON
     });
     results.email.push({ to: r.email, ...res });
   }
 
-  // Log the reminder
   if (results.email.some(r => r.success)) {
     compliance.sentReminders.push({
       sentAt: new Date(),
@@ -57,7 +54,7 @@ const sendReminderFor = async (compliance, daysLeft, type = 'auto') => {
 exports.getCompliances = async (req, res) => {
   try {
     const { clientId, from, to } = req.query;
-    const user = req.user; // Auth middleware se aata hai
+    const user = req.user; 
     
     const filter = { isDeleted: false };
     if (clientId) filter.clientId = clientId;
@@ -67,9 +64,13 @@ exports.getCompliances = async (req, res) => {
       if (to) filter.dueDate.$lte = new Date(to);
     }
 
-    // ✅ Role-Based Access: Agar admin nahi hai, toh sirf apni assigned dekhe
+    // ✅ FIX: Non-admin ko unke assigned compliance + unassigned compliance dikhao
     if (user.role !== 'admin') {
-      filter.assignedTo = user.id;
+      filter.$or = [
+        { assignedTo: user.id },
+        { assignedTo: { $exists: true, $size: 0 } },
+        { assignedTo: { $exists: false } }
+      ];
     }
 
     const list = await Compliance.find(filter)
@@ -87,12 +88,9 @@ exports.getCompliances = async (req, res) => {
 exports.createCompliance = async (req, res) => {
   try {
     const data = { ...req.body, createdBy: req.user?.id };
-    
-    // ✅ NAYA: Array ko clean karo taaki koi empty string save na ho
     if (data.attachmentUrls && Array.isArray(data.attachmentUrls)) {
       data.attachmentUrls = data.attachmentUrls.filter(u => u && u.trim() !== '');
     }
-
     const doc = new Compliance(data);
     await doc.save();
     res.status(201).json(doc);
@@ -105,17 +103,10 @@ exports.createCompliance = async (req, res) => {
 exports.updateCompliance = async (req, res) => {
   try {
     const updateData = { ...req.body };
-    
-    // ✅ NAYA: Array ko clean karo
     if (updateData.attachmentUrls && Array.isArray(updateData.attachmentUrls)) {
       updateData.attachmentUrls = updateData.attachmentUrls.filter(u => u && u.trim() !== '');
     }
-
-    const doc = await Compliance.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true, runValidators: true }
-    );
+    const doc = await Compliance.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
     if (!doc) return res.status(404).json({ message: 'Not found' });
     res.json(doc);
   } catch (err) {
@@ -126,11 +117,7 @@ exports.updateCompliance = async (req, res) => {
 
 exports.deleteCompliance = async (req, res) => {
   try {
-    const doc = await Compliance.findByIdAndUpdate(
-      req.params.id,
-      { isDeleted: true },
-      { new: true }
-    );
+    const doc = await Compliance.findByIdAndUpdate(req.params.id, { isDeleted: true }, { new: true });
     if (!doc) return res.status(404).json({ message: 'Not found' });
     res.json({ message: 'Deleted' });
   } catch (err) {
@@ -138,25 +125,40 @@ exports.deleteCompliance = async (req, res) => {
   }
 };
 
+// ✅ NAYA: Email ke button se filing confirm karne ke liye
+exports.confirmFilingFromEmail = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const doc = await Compliance.findById(id);
+    
+    if (!doc) return res.status(404).json({ message: 'Compliance record not found.' });
+    if (doc.status === 'Filed') {
+      return res.status(400).json({ message: 'This compliance is already marked as Filed.' });
+    }
+
+    doc.status = 'Filed';
+    await doc.save();
+    res.json({ success: true, message: 'Compliance marked as Filed successfully! Reminders stopped.' });
+  } catch (err) {
+    console.error('❌ confirmFilingFromEmail:', err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // ═══════════════════════════════════════════
-// ✅ MANUAL TRIGGER (testing + on-demand)
+// ✅ MANUAL TRIGGER
 // ═══════════════════════════════════════════
 exports.sendManualReminder = async (req, res) => {
   try {
     const doc = await Compliance.findById(req.params.id);
-    if (!doc || doc.isDeleted) {
-      return res.status(404).json({ message: 'Not found' });
-    }
+    if (!doc || doc.isDeleted) return res.status(404).json({ message: 'Not found' });
     
-    // ✅ Auto-Stop manual me bhi lagega
-    if (doc.status === 'Filed' || doc.status === 'Overdue') {
-      return res.status(400).json({ message: `Cannot send reminder. Status is ${doc.status}.` });
+    if (doc.status === 'Filed') {
+      return res.status(400).json({ message: `Cannot send reminder. Status is Filed.` });
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const due = new Date(doc.dueDate);
-    due.setHours(0, 0, 0, 0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const due = new Date(doc.dueDate); due.setHours(0, 0, 0, 0);
     const daysLeft = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
 
     const results = await sendReminderFor(doc, daysLeft, 'manual');
@@ -173,38 +175,46 @@ exports.sendManualReminder = async (req, res) => {
 exports.runDailyReminders = async () => {
   console.log('🔄 Running daily compliance reminders...');
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
 
-    const future = new Date(today);
-    future.setDate(future.getDate() + 30);
-
-    // ✅ Auto-Stop: Sirf Pending walo ko check karega
+    // ✅ FIX: Ab future ka nahi, balki SAARE Pending (aur Overdue) records uthayenge
     const list = await Compliance.find({
       isDeleted: false,
-      status: 'Pending', 
-      dueDate: { $gte: today, $lte: future },
+      status: { $in: ['Pending', 'Overdue'] } // Overdue bhi include kiya
     });
 
     let sentCount = 0;
+    
     for (const c of list) {
-      const due = new Date(c.dueDate);
-      due.setHours(0, 0, 0, 0);
+      const due = new Date(c.dueDate); due.setHours(0, 0, 0, 0);
       const daysLeft = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
 
-      if (daysLeft < 0 || daysLeft > c.reminderDays) continue;
+      // ✅ Status automatically Overdue mark karo agar date nikal gayi
+      if (daysLeft < 0 && c.status !== 'Overdue') {
+        c.status = 'Overdue';
+        await c.save();
+      }
 
+      // ✅ RULE: Mail tabhi bhejo jab:
+      // 1. Due date aane wali ho (daysLeft <= reminderDays)
+      // 2. YA Overdue ho chuka ho (daysLeft < 0)
+      if (daysLeft > c.reminderDays && daysLeft >= 0) {
+        continue; // Bahut zyada time bacha hai, skip karo
+      }
+
+      // Check if already sent today
       const alreadySentToday = (c.sentReminders || []).some(r => {
-        const d = new Date(r.sentAt);
-        d.setHours(0, 0, 0, 0);
+        const d = new Date(r.sentAt); d.setHours(0, 0, 0, 0);
         return d.getTime() === today.getTime() && r.type === 'auto';
       });
+      
       if (alreadySentToday) continue;
 
       await sendReminderFor(c, daysLeft, 'auto');
       sentCount++;
-      console.log(`✅ Reminder sent: ${c.complianceType} — ${daysLeft} days left`);
+      console.log(`✅ Reminder sent: ${c.complianceType} — ${daysLeft < 0 ? 'OVERDUE' : daysLeft + ' days left'}`);
     }
+    
     console.log(`🎉 Daily reminders done. Sent: ${sentCount}`);
     return sentCount;
   } catch (err) {
@@ -213,9 +223,6 @@ exports.runDailyReminders = async () => {
   }
 };
 
-// ═══════════════════════════════════════════
-// ✅ NAYA: Unique company names fetch karne ke liye
-// ═══════════════════════════════════════════
 exports.getUniqueCompanies = async (req, res) => {
   try {
     const companies = await Compliance.distinct('companyName', { isDeleted: false });
