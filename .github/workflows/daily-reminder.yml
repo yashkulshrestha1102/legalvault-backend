@@ -2,27 +2,75 @@ name: Daily Compliance Reminder
 
 on:
   schedule:
-    # Ye roz subah 9:00 AM IST (3:30 AM UTC) pe chalega
-    # Render UTC use karta hai, isliye IST ko UTC mein convert karna padta hai
-    - cron: '30 3 * * *'
-  workflow_dispatch: # Manual test karne ke liye
+    # ✅ Har ghante chalao — idempotent hai (alreadySentToday check backend mein hai)
+    # Isse miss hone ka chance ~0 ho jaata hai
+    - cron: '0 * * * *'
+  workflow_dispatch: # Manual test ke liye
 
 jobs:
   trigger-reminder:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
     steps:
-      - name: Trigger Daily Reminders API
+      - name: Wake up Render (cold start)
         run: |
-          echo "⏰ Triggering reminders at $(date)"
-          
-          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "https://legalvault-backend.onrender.com/api/compliance/trigger-cron-secret?key=LegalVault_Super_Secret_123")
-          
-          echo "✅ Response Code: $RESPONSE"
-          
-          if [ "$RESPONSE" = "200" ]; then
-            echo "🎉 Reminders triggered successfully!"
-          else
-            echo "⚠️ Failed to trigger. Check backend logs."
+          echo "🔔 Waking up Render backend..."
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 60 \
+              "https://legalvault-backend.onrender.com/health")
+            echo "Attempt $i: health check → $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Backend is awake!"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "⚠️ Backend still sleeping, will try to trigger anyway..."
+        continue-on-error: true
+
+      - name: Trigger Daily Reminders API
+        id: trigger
+        run: |
+          echo "⏰ Triggering reminders at $(date -u)"
+
+          SUCCESS=false
+
+          for attempt in 1 2 3 4 5; do
+            echo ""
+            echo "─── Attempt $attempt ───"
+
+            RESPONSE=$(curl -s -w "\n%{http_code}" \
+              --max-time 120 \
+              --retry 2 \
+              --retry-delay 5 \
+              "https://legalvault-backend.onrender.com/api/compliance/trigger-cron-secret?key=LegalVault_Super_Secret_123" \
+              || echo -e "CURL_FAILED\n000")
+
+            HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+            BODY=$(echo "$RESPONSE" | sed '$d')
+
+            echo "HTTP Code: $HTTP_CODE"
+            echo "Response Body: $BODY"
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "🎉 Reminders triggered successfully!"
+              echo "success=true" >> $GITHUB_OUTPUT
+              SUCCESS=true
+              break
+            fi
+
+            echo "⚠️ Attempt $attempt failed (HTTP $HTTP_CODE). Retrying in 20s..."
+            sleep 20
+          done
+
+          if [ "$SUCCESS" != "true" ]; then
+            echo "❌ All attempts failed."
+            echo "success=false" >> $GITHUB_OUTPUT
             exit 1
           fi
+
+      - name: Fail workflow if trigger failed
+        if: steps.trigger.outputs.success != 'true'
+        run: exit 1
