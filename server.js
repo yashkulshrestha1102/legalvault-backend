@@ -52,7 +52,10 @@ app.use((req, res, next) => {
   
   const origin = req.headers.origin;
 
-  if (origin && allowedOrigins.includes(origin)) {
+  // ✅ CORS FIX: Vercel ke saare preview URLs ko allow karo
+  const isAllowedVercel = origin && origin.includes('legalvault') && origin.includes('.vercel.app');
+
+  if (origin && (allowedOrigins.includes(origin) || isAllowedVercel)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   } else if (!origin) {
@@ -289,10 +292,6 @@ app.get('/', (req, res) => {
   res.send('LegalVault API is running');
 });
 
-
-
-
-
 // existing ke baad
 app.use('/api/compliance', require('./routes/complianceRoutes'));
 console.log('   ✅ /api/compliance');
@@ -318,6 +317,14 @@ app.use((err, req, res, next) => {
     method: req.method,
     ip: req.ip
   });
+
+  // ✅ ERROR HANDLER FIX: Agar error aaye toh CORS headers remove na ho, warna browser asli error nahi dikhayega
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Vary', 'Origin');
+  }
 
   // ✅ Multer-specific errors
   if (err.name === 'MulterError') {
